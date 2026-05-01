@@ -99,16 +99,16 @@ class SettingsView:
             on_submit=lambda _: self._add_extra_path(),
         )
 
-        # Reuse an existing FilePicker in the overlay if present; otherwise
-        # create one and add it. This avoids a new picker leaking on every
-        # round trip into Settings.
+        # FilePicker is a Service in Flet 0.84+, not a Control — it must
+        # live in `page.services`, not `page.overlay`. Reuse an existing
+        # one if present so re-entering Settings doesn't accumulate copies.
         existing = next(
-            (c for c in self.page.overlay if isinstance(c, ft.FilePicker)),
+            (s for s in self.page.services if isinstance(s, ft.FilePicker)),
             None,
         )
         if existing is None:
             self.folder_picker = ft.FilePicker()
-            self.page.overlay.append(self.folder_picker)
+            self.page.services.append(self.folder_picker)
         else:
             self.folder_picker = existing
 
@@ -248,8 +248,15 @@ class SettingsView:
         )
 
     def _pick_folder(self, target: str) -> None:
+        # `get_directory_path()` is a coroutine in Flet 0.84+, so we have to
+        # schedule it on the page event loop via `run_task`.
+        self.page.run_task(self._async_pick_folder, target)
+
+    async def _async_pick_folder(self, target: str) -> None:
         try:
-            picked = self.folder_picker.get_directory_path(dialog_title="Pick a folder")
+            picked = await self.folder_picker.get_directory_path(
+                dialog_title="Pick a folder"
+            )
         except Exception as exc:  # noqa: BLE001
             self._set_feedback(f"Folder picker unavailable: {exc}", error=True)
             return
