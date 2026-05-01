@@ -145,6 +145,9 @@ class DashboardView:
         )
         self.scan_progress.visible = False
         safe_update(self.panels_column, self.status_text, self.scan_progress)
+        # Force a full page render so panels rebuilt from worker threads
+        # (e.g. after a branch switch) actually show their new state.
+        safe_update(self.page)
 
     def _empty_state(self) -> ft.Control:
         return ft.Container(
