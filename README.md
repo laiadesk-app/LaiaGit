@@ -48,7 +48,12 @@ python3 -m venv .venv
 
 The first launch creates `~/.laiagit/config.yaml`. Default root folder is `~/dev` — change it from Settings or via the folder picker.
 
-> Pre-built binaries (.dmg / .exe / .AppImage) are coming once we cut the first stable release.
+### Pre-built binaries
+
+Each tagged release ships a `.zip` (macOS / Windows) and a `.tar.gz`
+(Linux) on the [Releases page](https://github.com/laiadesk-app/LaiaGit/releases).
+Pick the one for your OS, unpack, and run. See
+[docs/RELEASE.md](docs/RELEASE.md) for the build pipeline.
 
 ## Quick tour
 
