@@ -1,0 +1,215 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+
+import flet as ft
+
+from laiagit.services import AIService, ConfigService
+from laiagit.services.config_service import LaiaGitConfig
+
+
+class SettingsView:
+    def __init__(
+        self,
+        page: ft.Page,
+        config: LaiaGitConfig,
+        config_service: ConfigService,
+        ai: AIService,
+        on_back: Callable[[], None],
+        on_saved: Callable[[LaiaGitConfig], None],
+    ):
+        self.page = page
+        self.config = config
+        self.config_service = config_service
+        self.ai = ai
+        self.on_back = on_back
+        self.on_saved = on_saved
+
+        self.root_field = ft.TextField(
+            label="Root folder",
+            value=config.root_folder,
+            width=420,
+            hint_text="~/dev",
+        )
+        self.default_backend = ft.Dropdown(
+            label="Default AI backend",
+            options=[
+                ft.dropdown.Option("ollama"),
+                ft.dropdown.Option("claude_code"),
+                ft.dropdown.Option("api"),
+            ],
+            value=config.default_ai_backend,
+            width=220,
+        )
+        self.ollama_host = ft.TextField(
+            label="Ollama host",
+            value=config.ai_backends.ollama.host,
+            width=300,
+        )
+        self.ollama_model = ft.TextField(
+            label="Ollama model",
+            value=config.ai_backends.ollama.model,
+            width=220,
+        )
+        self.claude_command = ft.TextField(
+            label="Claude Code command",
+            value=config.ai_backends.claude_code.command,
+            width=220,
+        )
+        self.api_provider = ft.Dropdown(
+            label="API provider",
+            options=[
+                ft.dropdown.Option("anthropic"),
+                ft.dropdown.Option("openai"),
+            ],
+            value=config.ai_backends.api.provider,
+            width=200,
+        )
+        self.api_model = ft.TextField(
+            label="API model",
+            value=config.ai_backends.api.model,
+            width=260,
+        )
+        self.shortcuts = ft.Switch(
+            label="Enable keyboard shortcuts",
+            value=config.shortcuts_enabled,
+        )
+        self.preflight_secrets = ft.Switch(
+            label="Block secrets",
+            value=config.preflight.block_secrets,
+        )
+        self.preflight_todos = ft.Switch(
+            label="Warn on TODOs",
+            value=config.preflight.block_todos,
+        )
+        self.preflight_console = ft.Switch(
+            label="Warn on console.*",
+            value=config.preflight.block_console_logs,
+        )
+        self.detection_text = ft.Text("", size=12, color=ft.Colors.GREY_700)
+        self.feedback = ft.Text("", size=12, color=ft.Colors.GREY_700)
+
+    def build(self) -> ft.Control:
+        self._update_detection()
+        return ft.Column(
+            [
+                self._header(),
+                ft.Divider(height=1),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text("General", size=14, weight=ft.FontWeight.BOLD),
+                            self.root_field,
+                            ft.Divider(),
+                            ft.Text("AI backends", size=14, weight=ft.FontWeight.BOLD),
+                            self.detection_text,
+                            ft.Row(
+                                [
+                                    self.default_backend,
+                                    ft.IconButton(
+                                        icon=ft.Icons.REFRESH,
+                                        tooltip="Re-detect backends",
+                                        on_click=lambda _: self._update_detection(),
+                                    ),
+                                ],
+                                spacing=4,
+                            ),
+                            ft.Text("Ollama", size=12, weight=ft.FontWeight.W_500),
+                            ft.Row([self.ollama_host, self.ollama_model], spacing=8, wrap=True),
+                            ft.Text("Claude Code CLI", size=12, weight=ft.FontWeight.W_500),
+                            self.claude_command,
+                            ft.Text("External API", size=12, weight=ft.FontWeight.W_500),
+                            ft.Row([self.api_provider, self.api_model], spacing=8, wrap=True),
+                            ft.Text(
+                                "API keys are read from env: ANTHROPIC_API_KEY or OPENAI_API_KEY.",
+                                size=11,
+                                color=ft.Colors.GREY_600,
+                            ),
+                            ft.Divider(),
+                            ft.Text("Pre-flight defaults", size=14, weight=ft.FontWeight.BOLD),
+                            ft.Row(
+                                [
+                                    self.preflight_secrets,
+                                    self.preflight_todos,
+                                    self.preflight_console,
+                                ],
+                                spacing=12,
+                                wrap=True,
+                            ),
+                            ft.Divider(),
+                            ft.Text("Ergonomics", size=14, weight=ft.FontWeight.BOLD),
+                            self.shortcuts,
+                            ft.Divider(),
+                            ft.Row(
+                                [
+                                    self.feedback,
+                                    ft.Container(expand=True),
+                                    ft.FilledButton(
+                                        "Save",
+                                        icon=ft.Icons.SAVE,
+                                        on_click=lambda _: self._save(),
+                                    ),
+                                ]
+                            ),
+                        ],
+                        spacing=10,
+                        scroll=ft.ScrollMode.AUTO,
+                        expand=True,
+                    ),
+                    padding=20,
+                    expand=True,
+                ),
+            ],
+            expand=True,
+            spacing=0,
+        )
+
+    def _header(self) -> ft.Control:
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.IconButton(
+                        icon=ft.Icons.ARROW_BACK,
+                        tooltip="Back to dashboard",
+                        on_click=lambda _: self.on_back(),
+                    ),
+                    ft.Text("Settings", size=20, weight=ft.FontWeight.BOLD),
+                ],
+                alignment=ft.MainAxisAlignment.START,
+            ),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            bgcolor=ft.Colors.GREY_50,
+        )
+
+    def _update_detection(self) -> None:
+        results = self.ai.detect_available()
+        parts = []
+        for name in ("ollama", "claude_code", "api"):
+            mark = "✔" if results.get(name) else "✘"
+            color = "green" if results.get(name) else "grey"
+            parts.append(f"{mark} {name} ({color})")
+        self.detection_text.value = "Detected backends:  " + "    ".join(
+            f"{'✔' if results.get(n) else '✘'} {n}" for n in ("ollama", "claude_code", "api")
+        )
+        if self.detection_text.page is not None:
+            self.detection_text.update()
+
+    def _save(self) -> None:
+        self.config.root_folder = self.root_field.value or "~/dev"
+        self.config.default_ai_backend = self.default_backend.value or "ollama"
+        self.config.ai_backends.ollama.host = self.ollama_host.value or "http://localhost:11434"
+        self.config.ai_backends.ollama.model = self.ollama_model.value or "qwen2.5-coder:7b"
+        self.config.ai_backends.claude_code.command = self.claude_command.value or "claude"
+        self.config.ai_backends.api.provider = self.api_provider.value or "anthropic"
+        self.config.ai_backends.api.model = self.api_model.value or "claude-sonnet-4-6"
+        self.config.shortcuts_enabled = bool(self.shortcuts.value)
+        self.config.preflight.block_secrets = bool(self.preflight_secrets.value)
+        self.config.preflight.block_todos = bool(self.preflight_todos.value)
+        self.config.preflight.block_console_logs = bool(self.preflight_console.value)
+        self.config_service.save(self.config)
+        self.ai.reload(self.config)
+        self.feedback.value = "Saved."
+        self.feedback.color = ft.Colors.GREEN_500
+        if self.feedback.page is not None:
+            self.feedback.update()
+        self.on_saved(self.config)
