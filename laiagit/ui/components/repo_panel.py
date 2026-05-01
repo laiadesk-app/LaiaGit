@@ -119,29 +119,7 @@ class RepoPanel:
             tooltip=str(self.repo.path),
             max_lines=1,
         )
-        branch_chip = ft.Container(
-            content=ft.Row(
-                [
-                    ft.Icon(ft.Icons.ALT_ROUTE, size=12, color=ft.Colors.BLUE_700),
-                    ft.Text(
-                        self.repo.current_branch or "—",
-                        size=11,
-                        color=ft.Colors.BLUE_900,
-                        weight=ft.FontWeight.W_500,
-                    ),
-                    ft.Text(
-                        self._ahead_behind_text(),
-                        size=11,
-                        color=ft.Colors.BLUE_700,
-                    ),
-                ],
-                spacing=3,
-                tight=True,
-            ),
-            padding=ft.padding.symmetric(horizontal=6, vertical=2),
-            bgcolor=ft.Colors.BLUE_50,
-            border_radius=8,
-        )
+        branch_chip = self._branch_popup()
         status_pill = ft.Container(
             content=ft.Row(
                 [
@@ -276,6 +254,112 @@ class RepoPanel:
         self.expand_button.tooltip = "Collapse" if self.expanded else "Expand changes"
         self._render_body()
         safe_update(self.body_container, self.expand_button)
+
+    # ─────── branch popup ───────
+
+    def _branch_popup(self) -> ft.Control:
+        default = self.repo_config.default_branch
+        current = self.repo.current_branch or "—"
+        is_default = bool(default) and current == default
+
+        items: list[ft.PopupMenuItem] = []
+        for branch in self.repo.branches:
+            star = " ★" if branch.name == default else ""
+            dot = "● " if branch.is_current else "    "
+            items.append(
+                ft.PopupMenuItem(
+                    text=f"{dot}{branch.name}{star}",
+                    on_click=lambda _, b=branch.name: self._switch_branch(b),
+                )
+            )
+        items.append(ft.PopupMenuItem())  # divider
+
+        if not is_default:
+            items.append(
+                ft.PopupMenuItem(
+                    text=f"★ Set `{current}` as default",
+                    on_click=lambda _: self._set_default_branch(current),
+                )
+            )
+        if default:
+            items.append(
+                ft.PopupMenuItem(
+                    text=f"Clear default ({default})",
+                    on_click=lambda _: self._clear_default_branch(),
+                )
+            )
+
+        chip = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(ft.Icons.ALT_ROUTE, size=12, color=ft.Colors.BLUE_700),
+                    ft.Text(
+                        current,
+                        size=11,
+                        color=ft.Colors.BLUE_900,
+                        weight=ft.FontWeight.W_500,
+                    ),
+                    *([ft.Icon(ft.Icons.STAR, size=11, color=ft.Colors.AMBER_700)] if is_default else []),
+                    ft.Text(
+                        self._ahead_behind_text(),
+                        size=11,
+                        color=ft.Colors.BLUE_700,
+                    ),
+                    ft.Icon(ft.Icons.ARROW_DROP_DOWN, size=14, color=ft.Colors.BLUE_700),
+                ],
+                spacing=3,
+                tight=True,
+            ),
+            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+            bgcolor=ft.Colors.BLUE_50,
+            border_radius=8,
+        )
+
+        return ft.PopupMenuButton(
+            content=chip,
+            items=items,
+            tooltip="Switch branch / manage default",
+        )
+
+    def _switch_branch(self, branch: str) -> None:
+        if branch == self.repo.current_branch:
+            return
+        try:
+            result = self.git.checkout_branch(self.repo.path, branch)
+        except GitError as exc:
+            self._set_feedback(f"Switch failed: {exc}", error=True)
+            return
+        if result == "switched":
+            self._set_feedback(f"Switched to `{branch}`.")
+        elif result == "switched-with-stash":
+            self._set_feedback(f"Switched to `{branch}` and restored your changes.")
+        elif result == "switched-stash-conflict":
+            self._set_feedback(
+                f"Switched to `{branch}`, but stash pop has conflicts. "
+                "Resolve manually with `git stash list` / `git stash pop`.",
+                error=True,
+            )
+        self.on_changed()
+
+    def _set_default_branch(self, branch: str) -> None:
+        self.repo_config.default_branch = branch
+        try:
+            self.config_service.save_repo_config(self.repo.path, self.repo_config)
+        except OSError as exc:
+            self._set_feedback(f"Could not save default: {exc}", error=True)
+            return
+        self._set_feedback(f"`{branch}` is now the default branch for this repo.")
+        self.on_changed()
+
+    def _clear_default_branch(self) -> None:
+        self.repo_config.default_branch = None
+        try:
+            self.config_service.save_repo_config(self.repo.path, self.repo_config)
+        except OSError as exc:
+            self._set_feedback(f"Could not save: {exc}", error=True)
+            return
+        self._set_feedback("Default branch cleared.")
+        self.on_changed()
 
     # ─────── data ───────
 
