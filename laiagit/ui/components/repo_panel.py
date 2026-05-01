@@ -37,6 +37,7 @@ class RepoPanel:
         on_changed: Callable[[], None],
         on_open_merge: Callable[[Repo], None],
         on_exclude: Callable[[Repo], None] | None = None,
+        on_reorder: Callable[[Repo, str], None] | None = None,
     ):
         self.page = page
         self.repo = repo
@@ -46,6 +47,7 @@ class RepoPanel:
         self.on_changed = on_changed
         self.on_open_merge = on_open_merge
         self.on_exclude = on_exclude
+        self.on_reorder = on_reorder
         self.repo_config = config_service.load_repo_config(repo.path)
         self.selected_paths: set[str] = set()
         self.expanded: bool = False
@@ -63,9 +65,12 @@ class RepoPanel:
             hint_text="source branch",
             options=self._merge_options(),
             width=140,
+            height=30,
             dense=True,
+            text_size=11,
             text_style=ft.TextStyle(size=11),
             hint_style=ft.TextStyle(size=11, color=ft.Colors.GREY_500),
+            content_padding=ft.padding.symmetric(horizontal=8, vertical=4),
             on_select=lambda _: self._refresh_merge_button(),
             tooltip=(
                 f"Branch to merge into `{self.repo.current_branch}` (your current branch is the destination)"
@@ -183,54 +188,86 @@ class RepoPanel:
                     icon=ft.Icons.AUTO_AWESOME,
                     tooltip="Generate commit message with AI",
                     on_click=lambda _: self._generate_message(),
-                    icon_size=18,
+                    icon_size=16,
                 )
             )
-            right.append(
-                ft.FilledButton(
-                    "Commit",
-                    icon=ft.Icons.CHECK,
-                    on_click=lambda _: self._commit(),
-                    height=34,
-                )
-            )
+            right.append(self._compact_button("Commit", ft.Icons.CHECK, self._commit, kind="filled"))
 
         if self.repo.ahead or self.repo.has_changes:
-            right.append(
-                ft.FilledTonalButton(
-                    "Push",
-                    icon=ft.Icons.UPLOAD,
-                    on_click=lambda _: self._push(),
-                    height=34,
-                )
-            )
+            right.append(self._compact_button("Push", ft.Icons.UPLOAD, self._push, kind="tonal"))
 
         if self.repo_config.auto_pilot:
             right.append(
-                ft.OutlinedButton(
-                    "Auto-pilot",
-                    icon=ft.Icons.ROCKET_LAUNCH,
-                    on_click=lambda _: self._auto_pilot(),
-                    height=34,
-                )
+                self._compact_button("Auto-pilot", ft.Icons.ROCKET_LAUNCH, self._auto_pilot, kind="outlined")
             )
 
         if len(self.merge_source.options) > 0:
             right.append(self.merge_source)
-            self.merge_button = ft.OutlinedButton(
+            self.merge_button = self._compact_button(
                 self._merge_button_text(),
-                icon=ft.Icons.MERGE_TYPE,
-                on_click=lambda _: self._merge(),
-                height=34,
+                ft.Icons.MERGE_TYPE,
+                self._merge,
+                kind="outlined",
                 tooltip=(f"Merges the chosen source branch into `{self.repo.current_branch or 'current'}`."),
             )
             right.append(self.merge_button)
+
+        if self.on_reorder is not None:
+            right.append(
+                ft.PopupMenuButton(
+                    icon=ft.Icons.DRAG_HANDLE,
+                    icon_size=16,
+                    tooltip="Reorder this repo",
+                    items=[
+                        ft.PopupMenuItem(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(ft.Icons.VERTICAL_ALIGN_TOP, size=14),
+                                    ft.Text("Move to top", size=12),
+                                ],
+                                spacing=6,
+                            ),
+                            on_click=lambda _: self.on_reorder(self.repo, "top"),
+                        ),
+                        ft.PopupMenuItem(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(ft.Icons.ARROW_UPWARD, size=14),
+                                    ft.Text("Move up", size=12),
+                                ],
+                                spacing=6,
+                            ),
+                            on_click=lambda _: self.on_reorder(self.repo, "up"),
+                        ),
+                        ft.PopupMenuItem(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(ft.Icons.ARROW_DOWNWARD, size=14),
+                                    ft.Text("Move down", size=12),
+                                ],
+                                spacing=6,
+                            ),
+                            on_click=lambda _: self.on_reorder(self.repo, "down"),
+                        ),
+                        ft.PopupMenuItem(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(ft.Icons.VERTICAL_ALIGN_BOTTOM, size=14),
+                                    ft.Text("Move to bottom", size=12),
+                                ],
+                                spacing=6,
+                            ),
+                            on_click=lambda _: self.on_reorder(self.repo, "bottom"),
+                        ),
+                    ],
+                )
+            )
 
         if self.on_exclude is not None:
             right.append(
                 ft.IconButton(
                     icon=ft.Icons.VISIBILITY_OFF_OUTLINED,
-                    icon_size=18,
+                    icon_size=16,
                     tooltip=(
                         "Hide this repo from the dashboard. "
                         "The files on disk are NOT deleted — only hidden from LaiaGit. "
@@ -489,6 +526,34 @@ class RepoPanel:
             return
         self.merge_button.text = self._merge_button_text()
         safe_update(self.merge_button)
+
+    def _compact_button(
+        self,
+        label: str,
+        icon: str,
+        on_click: Callable[[], None],
+        *,
+        kind: str = "outlined",
+        tooltip: str | None = None,
+    ) -> ft.Control:
+        style = ft.ButtonStyle(
+            text_style=ft.TextStyle(size=11, weight=ft.FontWeight.W_500),
+            padding=ft.padding.symmetric(horizontal=10, vertical=2),
+            shape=ft.RoundedRectangleBorder(radius=6),
+        )
+        common = {
+            "text": label,
+            "icon": icon,
+            "on_click": lambda _: on_click(),
+            "height": 30,
+            "style": style,
+            "tooltip": tooltip,
+        }
+        if kind == "filled":
+            return ft.FilledButton(**common)
+        if kind == "tonal":
+            return ft.FilledTonalButton(**common)
+        return ft.OutlinedButton(**common)
 
     def _exclude_clicked(self) -> None:
         if self.on_exclude is None:
