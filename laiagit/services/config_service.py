@@ -56,6 +56,7 @@ class LaiaGitConfig:
     root_folder: str = "~/dev"
     extra_paths: list[str] = field(default_factory=list)
     excluded_repos: list[str] = field(default_factory=list)
+    repo_order: list[str] = field(default_factory=list)
     default_ai_backend: str = "ollama"
     ai_backends: AIBackendsConfig = field(default_factory=AIBackendsConfig)
     shortcuts_enabled: bool = True
@@ -139,6 +140,7 @@ class ConfigService:
             root_folder=raw.get("root_folder", "~/dev"),
             extra_paths=list(raw.get("extra_paths", [])),
             excluded_repos=list(raw.get("excluded_repos", [])),
+            repo_order=list(raw.get("repo_order", [])),
             default_ai_backend=raw.get("default_ai_backend", "ollama"),
             ai_backends=backends,
             shortcuts_enabled=raw.get("shortcuts_enabled", True),
@@ -151,6 +153,7 @@ class ConfigService:
             "root_folder": config.root_folder,
             "extra_paths": config.extra_paths,
             "excluded_repos": config.excluded_repos,
+            "repo_order": config.repo_order,
             "default_ai_backend": config.default_ai_backend,
             "ai_backends": {
                 "ollama": {

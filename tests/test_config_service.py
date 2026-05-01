@@ -68,6 +68,19 @@ def test_extra_paths_default_empty(tmp_path: Path) -> None:
     assert config.extra_paths == []
 
 
+def test_repo_order_roundtrip(tmp_path: Path) -> None:
+    service = ConfigService(config_path=tmp_path / "config.yaml")
+    config = LaiaGitConfig(
+        repo_order=["/Users/me/dev/laiagit", "/Users/me/dev/proj-x"],
+    )
+    service.save(config)
+    reloaded = service.load()
+    assert reloaded.repo_order == [
+        "/Users/me/dev/laiagit",
+        "/Users/me/dev/proj-x",
+    ]
+
+
 def test_excluded_repos_roundtrip(tmp_path: Path) -> None:
     service = ConfigService(config_path=tmp_path / "config.yaml")
     config = LaiaGitConfig(

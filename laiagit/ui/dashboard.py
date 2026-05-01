@@ -171,10 +171,10 @@ class DashboardView:
             self.status_text.value = f"{len(repos)} repos found — loading details (0/{len(repos)})…"
             safe_update(self.panels_column, self.status_text)
             safe_update(self.page)
-            # Hold the skeleton state briefly so the user can perceive the
-            # two-phase load (especially when navigating back from Settings,
-            # where the OS-level filesystem cache makes hydrate near-instant).
-            time.sleep(0.15)
+            # Tiny pause so the skeleton list is visible at least one frame
+            # before hydrate replaces panels. No per-repo delay — that just
+            # made big root folders feel stuck.
+            time.sleep(0.08)
 
             # Phase 2 — hydrate one at a time and swap the skeleton with
             # the real RepoPanel as soon as that repo's git data is ready.
@@ -189,24 +189,15 @@ class DashboardView:
                     on_changed=self.refresh,
                     on_open_merge=self.on_open_merge,
                     on_exclude=self._request_exclude,
+                    on_reorder=self._reorder_repo,
                 ).build()
                 self.status_text.value = f"{len(repos)} repos · loading details ({i + 1}/{len(repos)})…"
                 safe_update(self.panels_column, self.status_text)
-                safe_update(self.page)
-                # Small per-repo pause: makes the gradual fill perceptible
-                # without meaningfully slowing the scan on large root folders.
-                if len(repos) <= 20:
-                    time.sleep(0.05)
 
-            # Phase 3 — sort by status priority (pending / unpushed / conflict
-            # first) once all hydrates are done.
-            sorted_pairs = sorted(
-                zip(repos, self.panels_column.controls, strict=True),
-                key=lambda pair: (
-                    pair[0].status.value not in ("pending", "conflict", "unpushed"),
-                    pair[0].name.lower(),
-                ),
-            )
+            # Phase 3 — apply ordering: user's manual `config.repo_order`
+            # wins; everything else falls back to status priority + name.
+            pairs = list(zip(repos, self.panels_column.controls, strict=True))
+            sorted_pairs = self._apply_order(pairs)
             sorted_repos, sorted_panels = (list(s) for s in zip(*sorted_pairs, strict=True))
             self.panels_column.controls = sorted_panels
             self.repos = sorted_repos
@@ -259,6 +250,62 @@ class DashboardView:
             border=ft.border.all(1, ft.Colors.GREY_200),
             border_radius=10,
         )
+
+    def _apply_order(self, pairs: list[tuple[Repo, ft.Control]]) -> list[tuple[Repo, ft.Control]]:
+        """Order (repo, panel) pairs.
+
+        Repos whose path appears in `config.repo_order` come first, in that
+        explicit order. Remaining repos go after, sorted by status priority
+        and then name.
+        """
+        order = self.config.repo_order
+        order_set = set(order)
+        in_order = [p for p in pairs if str(p[0].path) in order_set]
+        rest = [p for p in pairs if str(p[0].path) not in order_set]
+
+        in_order.sort(key=lambda pair: order.index(str(pair[0].path)))
+        rest.sort(
+            key=lambda pair: (
+                pair[0].status.value not in ("pending", "conflict", "unpushed"),
+                pair[0].name.lower(),
+            )
+        )
+        return in_order + rest
+
+    def _reorder_repo(self, repo: Repo, direction: str) -> None:
+        """Move a repo up/down/top/bottom in the visible order.
+
+        Snapshots the current visible order into `config.repo_order`,
+        applies the move, persists, refreshes.
+        """
+        if not self.repos:
+            return
+        try:
+            current_index = next(i for i, r in enumerate(self.repos) if str(r.path) == str(repo.path))
+        except StopIteration:
+            return
+
+        new_repos = list(self.repos)
+        item = new_repos.pop(current_index)
+        if direction == "top":
+            new_repos.insert(0, item)
+        elif direction == "bottom":
+            new_repos.append(item)
+        elif direction == "up":
+            new_repos.insert(max(0, current_index - 1), item)
+        elif direction == "down":
+            new_repos.insert(min(len(new_repos), current_index + 1), item)
+        else:
+            return
+
+        self.config.repo_order = [str(r.path) for r in new_repos]
+        try:
+            self.config_service.save(self.config)
+        except OSError as exc:
+            self.status_text.value = f"Could not save order: {exc}"
+            safe_update(self.status_text)
+            return
+        self.refresh()
 
     def _request_exclude(self, repo: Repo) -> None:
         """Open a confirmation dialog before hiding a repo."""
