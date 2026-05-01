@@ -63,7 +63,19 @@ copyright = "Copyright (C) 2026 LAIADesk"
 
 [tool.flet.app]
 path = "."
-module = "laiagit"
+module = "main"
+exclude = [
+    "build",
+    "dist",
+    ".venv",
+    "tests",
+    "docs",
+    "backup",
+    ".github",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+]
 
 [tool.flet.macos]
 bundle_id = "com.laiadesk.laiagit"

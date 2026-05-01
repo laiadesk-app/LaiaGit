@@ -67,7 +67,7 @@ jobs:
         run: pip install -e .
 
       - name: Build ${{ matrix.flet_target }}
-        run: flet build ${{ matrix.flet_target }} --module-name laiagit
+        run: flet build ${{ matrix.flet_target }}
 
       - name: Package macOS as zip
         if: matrix.os == 'macos'
