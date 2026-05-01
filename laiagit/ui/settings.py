@@ -99,10 +99,18 @@ class SettingsView:
             on_submit=lambda _: self._add_extra_path(),
         )
 
-        self._picker_target: str | None = None
-        self.folder_picker = ft.FilePicker(on_result=self._on_folder_picked)
-        if self.folder_picker not in self.page.overlay:
+        # Reuse an existing FilePicker in the overlay if present; otherwise
+        # create one and add it. This avoids a new picker leaking on every
+        # round trip into Settings.
+        existing = next(
+            (c for c in self.page.overlay if isinstance(c, ft.FilePicker)),
+            None,
+        )
+        if existing is None:
+            self.folder_picker = ft.FilePicker()
             self.page.overlay.append(self.folder_picker)
+        else:
+            self.folder_picker = existing
 
     def build(self) -> ft.Control:
         self._update_detection()
@@ -240,20 +248,20 @@ class SettingsView:
         )
 
     def _pick_folder(self, target: str) -> None:
-        self._picker_target = target
-        self.folder_picker.get_directory_path(dialog_title="Pick a folder")
-
-    def _on_folder_picked(self, e: ft.FilePickerResultEvent) -> None:
-        if not e.path:
+        try:
+            picked = self.folder_picker.get_directory_path(dialog_title="Pick a folder")
+        except Exception as exc:  # noqa: BLE001
+            self._set_feedback(f"Folder picker unavailable: {exc}", error=True)
             return
-        if self._picker_target == "root":
-            self.root_field.value = e.path
+        if not picked:
+            return
+        if target == "root":
+            self.root_field.value = picked
             safe_update(self.root_field)
-            self._set_feedback(f"Root folder set to `{e.path}`. Click Save to persist.")
-        elif self._picker_target == "extra":
-            self.extra_path_input.value = e.path
+            self._set_feedback(f"Root folder set to `{picked}`. Click Save to persist.")
+        elif target == "extra":
+            self.extra_path_input.value = picked
             safe_update(self.extra_path_input)
-        self._picker_target = None
 
     def _render_extra_paths(self) -> None:
         if not self.config.extra_paths:

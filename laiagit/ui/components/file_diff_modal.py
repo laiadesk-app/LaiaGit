@@ -14,6 +14,12 @@ def open_diff_modal(page: ft.Page, file_path: str, diff_text: str) -> None:
         dialog.open = False
         with contextlib.suppress(Exception):
             page.update()
+        # Clean up: drop the dialog from page.overlay so opening many files
+        # in a row does not accumulate stale dialogs.
+        with contextlib.suppress(ValueError):
+            page.overlay.remove(dialog)
+        with contextlib.suppress(Exception):
+            page.update()
 
     dialog = ft.AlertDialog(
         modal=True,
@@ -33,7 +39,6 @@ def open_diff_modal(page: ft.Page, file_path: str, diff_text: str) -> None:
         actions_alignment=ft.MainAxisAlignment.END,
     )
 
-    if dialog not in page.overlay:
-        page.overlay.append(dialog)
+    page.overlay.append(dialog)
     dialog.open = True
     page.update()
