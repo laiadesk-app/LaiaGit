@@ -115,44 +115,63 @@ class DashboardView:
 
     def _refresh_worker(self) -> None:
         try:
+            # Phase 1 — discover repo names. This is fast: it just walks
+            # the filesystem looking for `.git` directories.
             repos = self.scanner.scan_all(
                 self.config.root_folder_path,
                 self.config.extra_path_paths,
                 self.config.excluded_repo_paths,
             )
-            for r in repos:
-                self.git.hydrate(r)
-            repos.sort(
-                key=lambda r: (
-                    r.status.value not in ("pending", "conflict", "unpushed"),
-                    r.name.lower(),
-                )
-            )
-            self.repos = repos
 
             if not repos:
                 self.panels_column.controls = [self._empty_state()]
-            else:
-                self.panels_column.controls = [
-                    RepoPanel(
-                        page=self.page,
-                        repo=repo,
-                        git=self.git,
-                        ai=self.ai,
-                        config_service=self.config_service,
-                        on_changed=self.refresh,
-                        on_open_merge=self.on_open_merge,
-                        on_exclude=self._exclude_repo,
-                    ).build()
-                    for repo in repos
-                ]
+                self.status_text.value = f"0 repos in {self.config.root_folder_path}"
+                self.scan_progress.visible = False
+                safe_update(self.panels_column, self.status_text, self.scan_progress)
+                safe_update(self.page)
+                return
 
-            actionable = sum(1 for r in repos if r.status.value in ("pending", "unpushed", "conflict"))
-            self.status_text.value = (
-                f"{len(repos)} repos · {actionable} need attention"
-                if repos
-                else f"0 repos in {self.config.root_folder_path}"
+            # Show all repos as skeleton panels (just names) immediately so
+            # the user sees the full list while the per-repo data loads.
+            repos.sort(key=lambda r: r.name.lower())
+            self.panels_column.controls = [self._skeleton_panel(r) for r in repos]
+            self.status_text.value = f"{len(repos)} repos found — loading details (0/{len(repos)})…"
+            safe_update(self.panels_column, self.status_text)
+            safe_update(self.page)
+
+            # Phase 2 — hydrate one at a time and swap the skeleton with
+            # the real RepoPanel as soon as that repo's git data is ready.
+            for i, repo in enumerate(repos):
+                self.git.hydrate(repo)
+                self.panels_column.controls[i] = RepoPanel(
+                    page=self.page,
+                    repo=repo,
+                    git=self.git,
+                    ai=self.ai,
+                    config_service=self.config_service,
+                    on_changed=self.refresh,
+                    on_open_merge=self.on_open_merge,
+                    on_exclude=self._request_exclude,
+                ).build()
+                self.status_text.value = f"{len(repos)} repos · loading details ({i + 1}/{len(repos)})…"
+                safe_update(self.panels_column, self.status_text)
+                safe_update(self.page)
+
+            # Phase 3 — sort by status priority (pending / unpushed / conflict
+            # first) once all hydrates are done.
+            sorted_pairs = sorted(
+                zip(repos, self.panels_column.controls, strict=True),
+                key=lambda pair: (
+                    pair[0].status.value not in ("pending", "conflict", "unpushed"),
+                    pair[0].name.lower(),
+                ),
             )
+            sorted_repos, sorted_panels = (list(s) for s in zip(*sorted_pairs, strict=True))
+            self.panels_column.controls = sorted_panels
+            self.repos = sorted_repos
+
+            actionable = sum(1 for r in sorted_repos if r.status.value in ("pending", "unpushed", "conflict"))
+            self.status_text.value = f"{len(sorted_repos)} repos · {actionable} need attention"
         except Exception as exc:  # noqa: BLE001
             self.status_text.value = f"Scan failed: {exc}"
             self.panels_column.controls = [
@@ -162,6 +181,119 @@ class DashboardView:
             self.scan_progress.visible = False
             safe_update(self.panels_column, self.status_text, self.scan_progress)
             safe_update(self.page)
+
+    def _skeleton_panel(self, repo: Repo) -> ft.Control:
+        """Lightweight placeholder shown while a repo is hydrating."""
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.ProgressRing(width=14, height=14, stroke_width=2),
+                    ft.Text(
+                        repo.name,
+                        size=14,
+                        weight=ft.FontWeight.BOLD,
+                        no_wrap=True,
+                    ),
+                    ft.Text(
+                        str(repo.path),
+                        size=10,
+                        color=ft.Colors.GREY_600,
+                        no_wrap=True,
+                        overflow=ft.TextOverflow.ELLIPSIS,
+                        expand=True,
+                    ),
+                    ft.Text(
+                        "Loading…",
+                        size=11,
+                        color=ft.Colors.GREY_500,
+                        italic=True,
+                    ),
+                ],
+                spacing=10,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+            margin=ft.margin.only(bottom=8),
+            bgcolor=ft.Colors.WHITE,
+            border=ft.border.all(1, ft.Colors.GREY_200),
+            border_radius=10,
+        )
+
+    def _request_exclude(self, repo: Repo) -> None:
+        """Open a confirmation dialog before hiding a repo."""
+        dialog: ft.AlertDialog | None = None
+
+        def close() -> None:
+            if dialog is not None:
+                dialog.open = False
+                if dialog in self.page.overlay:
+                    self.page.overlay.remove(dialog)
+                self.page.update()
+
+        def confirm(_: ft.ControlEvent) -> None:
+            close()
+            self._exclude_repo(repo)
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Row(
+                [
+                    ft.Icon(ft.Icons.VISIBILITY_OFF, color=ft.Colors.AMBER_700),
+                    ft.Text(f"Hide '{repo.name}' from the dashboard?", size=15),
+                ],
+                spacing=8,
+            ),
+            content=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Text(
+                            "This only HIDES the repository from LaiaGit's dashboard. "
+                            "Your files and the .git folder are NOT touched on disk — "
+                            "the repository keeps working with git outside LaiaGit.",
+                            size=12,
+                        ),
+                        ft.Text(
+                            "You can bring it back any time from Settings → Excluded repos.",
+                            size=11,
+                            color=ft.Colors.GREY_700,
+                            italic=True,
+                        ),
+                        ft.Container(
+                            content=ft.Row(
+                                [
+                                    ft.Icon(ft.Icons.FOLDER, size=14, color=ft.Colors.GREY_700),
+                                    ft.Text(
+                                        str(repo.path),
+                                        size=11,
+                                        color=ft.Colors.GREY_800,
+                                        selectable=True,
+                                    ),
+                                ],
+                                spacing=6,
+                            ),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                            bgcolor=ft.Colors.GREY_100,
+                            border_radius=6,
+                        ),
+                    ],
+                    spacing=10,
+                    tight=True,
+                ),
+                width=460,
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda _: close()),
+                ft.FilledButton(
+                    "Hide repo",
+                    icon=ft.Icons.VISIBILITY_OFF,
+                    on_click=confirm,
+                ),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.overlay.append(dialog)
+        dialog.open = True
+        self.page.update()
 
     def _exclude_repo(self, repo: Repo) -> None:
         path_str = str(repo.path)

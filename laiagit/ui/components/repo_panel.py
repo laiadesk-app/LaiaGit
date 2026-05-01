@@ -231,7 +231,11 @@ class RepoPanel:
                 ft.IconButton(
                     icon=ft.Icons.VISIBILITY_OFF_OUTLINED,
                     icon_size=18,
-                    tooltip="Hide this repo from the dashboard (manage in Settings)",
+                    tooltip=(
+                        "Hide this repo from the dashboard. "
+                        "The files on disk are NOT deleted — only hidden from LaiaGit. "
+                        "Restore from Settings → Excluded repos."
+                    ),
                     on_click=lambda _: self._exclude_clicked(),
                 )
             )
