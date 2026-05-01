@@ -61,8 +61,8 @@ class RepoPanel:
             dense=True,
             expand=True,
         )
-        self.merge_source = ft.Dropdown(
-            hint_text="source branch",
+        self.merge_target = ft.Dropdown(
+            hint_text="target branch",
             options=self._merge_options(),
             width=140,
             height=30,
@@ -73,7 +73,8 @@ class RepoPanel:
             content_padding=ft.padding.symmetric(horizontal=8, vertical=4),
             on_select=lambda _: self._refresh_merge_button(),
             tooltip=(
-                f"Branch to merge into `{self.repo.current_branch}` (your current branch is the destination)"
+                f"Target branch (where the merge lands). "
+                f"Your current branch `{self.repo.current_branch}` is the source."
             ),
         )
         self.merge_button: ft.OutlinedButton | None = None
@@ -201,14 +202,17 @@ class RepoPanel:
                 self._compact_button("Auto-pilot", ft.Icons.ROCKET_LAUNCH, self._auto_pilot, kind="outlined")
             )
 
-        if len(self.merge_source.options) > 0:
-            right.append(self.merge_source)
+        if len(self.merge_target.options) > 0:
+            right.append(self.merge_target)
             self.merge_button = self._compact_button(
                 self._merge_button_text(),
                 ft.Icons.MERGE_TYPE,
                 self._merge,
                 kind="outlined",
-                tooltip=(f"Merges the chosen source branch into `{self.repo.current_branch or 'current'}`."),
+                tooltip=(
+                    f"Merges your current branch `{self.repo.current_branch or 'current'}` "
+                    f"into the chosen target branch."
+                ),
             )
             right.append(self.merge_button)
 
@@ -515,11 +519,14 @@ class RepoPanel:
         return [ft.dropdown.Option(b.name) for b in self.repo.branches if b.name != self.repo.current_branch]
 
     def _merge_button_text(self) -> str:
-        current = self.repo.current_branch or "current"
-        source = self.merge_source.value
-        if source:
-            return f"Merge {source} into {current}"
-        return f"Merge into {current}"
+        # Source = current branch (where you stand). Target = picked in the
+        # dropdown. Reads as "Merge develop into main" when on develop and
+        # main is chosen as target.
+        source = self.repo.current_branch or "current"
+        target = self.merge_target.value
+        if target:
+            return f"Merge {source} into {target}"
+        return f"Merge {source} into…"
 
     def _refresh_merge_button(self) -> None:
         if self.merge_button is None:
@@ -734,19 +741,40 @@ class RepoPanel:
         self._run_async("🚀 Auto-pilot: stage → commit → push…", work)
 
     def _merge(self) -> None:
-        source = self.merge_source.value
-        if not source:
-            self._set_feedback("Pick a source branch to merge.", error=True)
+        # Source = current branch (the work you've done). Target = where
+        # you want to land it (picked in the dropdown).
+        source = self.repo.current_branch
+        target = self.merge_target.value
+        if not target:
+            self._set_feedback("Pick a target branch to merge into.", error=True)
             self._ensure_expanded()
             return
-        target = self.repo.current_branch
+        if not source:
+            self._set_feedback("Cannot merge from a detached HEAD.", error=True)
+            return
 
         def work() -> None:
+            # 1) Switch to the target branch (auto-stash if dirty).
+            try:
+                checkout_result = self.git.checkout_branch(self.repo.path, target)
+            except GitError as exc:
+                self._set_feedback(f"Could not switch to `{target}`: {exc}", error=True)
+                return
+            if checkout_result == "switched-stash-conflict":
+                self._set_feedback(
+                    f"Switched to `{target}` but stash has conflicts. Resolve manually before merging.",
+                    error=True,
+                )
+                self.on_changed()
+                return
+
+            # 2) Merge the original source branch into the now-current target.
             try:
                 conflict = self.git.begin_merge(self.repo.path, source)
             except GitError as exc:
                 self._set_feedback(f"Merge failed: {exc}", error=True)
                 return
+
             if conflict is None:
                 try:
                     sha = self.git.commit(
@@ -756,13 +784,14 @@ class RepoPanel:
                 except GitError as exc:
                     self._set_feedback(f"Could not finalize merge: {exc}", error=True)
                     return
-                self._set_feedback(f"Merged {source} → {target} ({sha[:7]}).")
+                self._set_feedback(f"Merged {source} → {target} ({sha[:7]}). You are now on `{target}`.")
                 self.on_changed()
                 return
+
             self._set_feedback(f"Merge has {len(conflict.files)} conflict(s). Opening AI conflict resolver…")
             self.on_open_merge(self.repo)
 
-        self._run_async(f"Merging {source} into {target}…", work)
+        self._run_async(f"Switching to {target} and merging {source}…", work)
 
     # ─────── helpers ───────
 
