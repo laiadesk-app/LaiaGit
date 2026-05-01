@@ -6,6 +6,7 @@ import flet as ft
 
 from laiagit.services import AIService, ConfigService
 from laiagit.services.config_service import LaiaGitConfig
+from laiagit.ui._utils import safe_update
 
 
 class SettingsView:
@@ -183,16 +184,10 @@ class SettingsView:
 
     def _update_detection(self) -> None:
         results = self.ai.detect_available()
-        parts = []
-        for name in ("ollama", "claude_code", "api"):
-            mark = "✔" if results.get(name) else "✘"
-            color = "green" if results.get(name) else "grey"
-            parts.append(f"{mark} {name} ({color})")
         self.detection_text.value = "Detected backends:  " + "    ".join(
             f"{'✔' if results.get(n) else '✘'} {n}" for n in ("ollama", "claude_code", "api")
         )
-        if self.detection_text.page is not None:
-            self.detection_text.update()
+        safe_update(self.detection_text)
 
     def _save(self) -> None:
         self.config.root_folder = self.root_field.value or "~/dev"
@@ -210,6 +205,5 @@ class SettingsView:
         self.ai.reload(self.config)
         self.feedback.value = "Saved."
         self.feedback.color = ft.Colors.GREEN_500
-        if self.feedback.page is not None:
-            self.feedback.update()
+        safe_update(self.feedback)
         self.on_saved(self.config)

@@ -7,6 +7,7 @@ import flet as ft
 from laiagit.models import Repo
 from laiagit.services import GitService, RepoScanner
 from laiagit.services.config_service import LaiaGitConfig
+from laiagit.ui._utils import safe_update
 from laiagit.ui.components.repo_card import repo_card
 
 
@@ -90,8 +91,7 @@ class DashboardView:
 
     def refresh(self) -> None:
         self.status_text.value = "Scanning…"
-        if self.status_text.page is not None:
-            self.status_text.update()
+        safe_update(self.status_text)
         self.repos = self.scanner.scan(self.config.root_folder_path)
         for r in self.repos:
             self.git.hydrate(r)
@@ -99,10 +99,7 @@ class DashboardView:
             self._empty_state()
         ]
         self.status_text.value = f"{len(self.repos)} repos in {self.config.root_folder_path}"
-        if self.cards_container.page is not None:
-            self.cards_container.update()
-        if self.status_text.page is not None:
-            self.status_text.update()
+        safe_update(self.cards_container, self.status_text)
 
     def _empty_state(self) -> ft.Control:
         return ft.Container(
