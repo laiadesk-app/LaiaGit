@@ -64,10 +64,13 @@ class RepoPanel:
             dense=True,
             text_style=ft.TextStyle(size=11),
             hint_style=ft.TextStyle(size=11, color=ft.Colors.GREY_500),
+            on_change=lambda _: self._refresh_merge_button(),
             tooltip=(
-                f"Branch to merge into `{self.repo.current_branch}` (your current branch is the destination)"
+                f"Branch to merge into `{self.repo.current_branch}` "
+                f"(your current branch is the destination)"
             ),
         )
+        self.merge_button: ft.OutlinedButton | None = None
         self.feedback = ft.Text("", size=11, color=ft.Colors.GREY_700, selectable=True)
         self.files_column = ft.Column(spacing=2, tight=True)
         self.select_all = ft.Checkbox(
@@ -212,17 +215,18 @@ class RepoPanel:
             )
 
         if len(self.merge_source.options) > 0:
-            current = self.repo.current_branch or "current"
             right.append(self.merge_source)
-            right.append(
-                ft.OutlinedButton(
-                    f"Merge into {current}",
-                    icon=ft.Icons.MERGE_TYPE,
-                    on_click=lambda _: self._merge(),
-                    height=34,
-                    tooltip=f"Merges the source branch into `{current}` (your current branch).",
-                )
+            self.merge_button = ft.OutlinedButton(
+                self._merge_button_text(),
+                icon=ft.Icons.MERGE_TYPE,
+                on_click=lambda _: self._merge(),
+                height=34,
+                tooltip=(
+                    f"Merges the chosen source branch into "
+                    f"`{self.repo.current_branch or 'current'}`."
+                ),
             )
+            right.append(self.merge_button)
 
         return ft.Row(
             [
@@ -459,7 +463,24 @@ class RepoPanel:
         return " ".join(parts)
 
     def _merge_options(self) -> list[ft.dropdown.Option]:
-        return [ft.dropdown.Option(b.name) for b in self.repo.branches if b.name != self.repo.current_branch]
+        return [
+            ft.dropdown.Option(b.name)
+            for b in self.repo.branches
+            if b.name != self.repo.current_branch
+        ]
+
+    def _merge_button_text(self) -> str:
+        current = self.repo.current_branch or "current"
+        source = self.merge_source.value
+        if source:
+            return f"Merge {source} into {current}"
+        return f"Merge into {current}"
+
+    def _refresh_merge_button(self) -> None:
+        if self.merge_button is None:
+            return
+        self.merge_button.text = self._merge_button_text()
+        safe_update(self.merge_button)
 
     # ─────── interactions ───────
 
