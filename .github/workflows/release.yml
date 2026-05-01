@@ -74,23 +74,23 @@ jobs:
 
       - name: Package macOS as zip
         if: matrix.os == 'macos'
+        shell: bash {0}
         run: |
-          set -euo pipefail
-          # Flutter's macOS output: build/macos/Build/Products/Release/<App>.app
-          # Fall back to a broader search if the layout changes between Flet versions.
-          APP_PATH=$(find build/macos/Build/Products/Release -maxdepth 1 -type d -name "*.app" 2>/dev/null | head -1)
+          echo "=== build/macos top-level layout ==="
+          ls -la build/macos/ 2>&1 || echo "(build/macos missing)"
+          echo "=== searching for .app bundles (excluding Frameworks/) ==="
+          APP_PATH=$(find build/macos -type d -name "*.app" -not -path "*/Frameworks/*" 2>/dev/null | head -1)
+          echo "APP_PATH=$APP_PATH"
           if [ -z "$APP_PATH" ]; then
-            APP_PATH=$(find build/macos -maxdepth 6 -type d -name "*.app" -not -path "*/Frameworks/*" | head -1)
-          fi
-          if [ -z "$APP_PATH" ]; then
-            echo "::error::No .app bundle found under build/macos"
-            find build/macos -maxdepth 4 -type d
+            echo "::error::No .app bundle found anywhere under build/macos"
+            echo "=== full directory tree (maxdepth 4) ==="
+            find build/macos -maxdepth 4 -type d 2>&1
             exit 1
           fi
           echo "Found app bundle at: $APP_PATH"
           APP_DIR=$(dirname "$APP_PATH")
           APP_NAME=$(basename "$APP_PATH")
-          (cd "$APP_DIR" && zip -ry "$GITHUB_WORKSPACE/LaiaGit-macos.zip" "$APP_NAME")
+          ( cd "$APP_DIR" && zip -ry "$GITHUB_WORKSPACE/LaiaGit-macos.zip" "$APP_NAME" )
           ls -la LaiaGit-macos.zip
 
       - name: Package Windows as zip
