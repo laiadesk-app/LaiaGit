@@ -5,7 +5,7 @@ from collections.abc import Callable
 import flet as ft
 
 from laiagit.ai_backends import AIBackendError
-from laiagit.models import FileChange, Repo
+from laiagit.models import FileChange, FileStatus, Repo
 from laiagit.services import (
     AIService,
     ConfigService,
@@ -24,7 +24,7 @@ class _PreflightBlockedError(Exception):
 
 
 class RepoPanel:
-    """Full-width panel for one repository: status, branch, files, commit, push, merge."""
+    """One-line repo panel that expands to show changes + actions when pending."""
 
     def __init__(
         self,
@@ -45,12 +45,13 @@ class RepoPanel:
         self.on_open_merge = on_open_merge
         self.repo_config = config_service.load_repo_config(repo.path)
         self.selected_paths: set[str] = set()
+        self.expanded: bool = False
 
         self.commit_message = ft.TextField(
             label="Commit message",
             multiline=True,
             min_lines=1,
-            max_lines=4,
+            max_lines=3,
             hint_text="Type or click ✨ to generate with AI",
             dense=True,
             expand=True,
@@ -58,7 +59,7 @@ class RepoPanel:
         self.merge_source = ft.Dropdown(
             label="Merge from",
             options=self._merge_options(),
-            width=180,
+            width=160,
             dense=True,
         )
         self.feedback = ft.Text("", size=11, color=ft.Colors.GREY_700, selectable=True)
@@ -70,42 +71,61 @@ class RepoPanel:
             tooltip="Select all changes",
         )
         self.changes_label = ft.Text("", size=12, color=ft.Colors.GREY_700)
+        self.expand_button = ft.IconButton(
+            icon=ft.Icons.EXPAND_MORE,
+            tooltip="Expand changes",
+            on_click=lambda _: self._toggle_expanded(),
+        )
+        self.body_container = ft.Container(visible=False)
+
+    # ─────── public API ───────
 
     def build(self) -> ft.Control:
         self._populate_files()
+        self._render_body()
         return ft.Container(
             content=ft.Column(
-                [
-                    self._header_row(),
-                    ft.Divider(height=1, color=ft.Colors.GREY_200),
-                    self._files_section(),
-                    ft.Divider(height=1, color=ft.Colors.GREY_200),
-                    self._actions_section(),
-                    self.feedback,
-                ],
-                spacing=8,
+                [self._header_line(), self.body_container],
+                spacing=6,
                 tight=True,
             ),
-            padding=16,
-            margin=ft.margin.only(bottom=10),
+            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+            margin=ft.margin.only(bottom=8),
             bgcolor=ft.Colors.WHITE,
             border=ft.border.all(1, ft.Colors.GREY_300),
             border_radius=10,
         )
 
-    # ─────── sections ───────
+    # ─────── header (single line) ───────
 
-    def _header_row(self) -> ft.Control:
+    def _header_line(self) -> ft.Control:
         color = STATUS_COLOR.get(self.repo.status, ft.Colors.GREY_400)
         icon = STATUS_ICON.get(self.repo.status, ft.Icons.CIRCLE)
         label = STATUS_LABEL.get(self.repo.status, "Unknown")
+
+        # Left cluster: name, path, branch, status pill
+        name_text = ft.Text(
+            self.repo.name,
+            size=14,
+            weight=ft.FontWeight.BOLD,
+            no_wrap=True,
+        )
+        path_text = ft.Text(
+            str(self.repo.path),
+            size=10,
+            color=ft.Colors.GREY_600,
+            no_wrap=True,
+            overflow=ft.TextOverflow.ELLIPSIS,
+            tooltip=str(self.repo.path),
+            max_lines=1,
+        )
         branch_chip = ft.Container(
             content=ft.Row(
                 [
-                    ft.Icon(ft.Icons.ALT_ROUTE, size=14, color=ft.Colors.BLUE_700),
+                    ft.Icon(ft.Icons.ALT_ROUTE, size=12, color=ft.Colors.BLUE_700),
                     ft.Text(
-                        f"on {self.repo.current_branch or '—'}",
-                        size=12,
+                        self.repo.current_branch or "—",
+                        size=11,
                         color=ft.Colors.BLUE_900,
                         weight=ft.FontWeight.W_500,
                     ),
@@ -115,111 +135,147 @@ class RepoPanel:
                         color=ft.Colors.BLUE_700,
                     ),
                 ],
+                spacing=3,
+                tight=True,
+            ),
+            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+            bgcolor=ft.Colors.BLUE_50,
+            border_radius=8,
+        )
+        status_pill = ft.Container(
+            content=ft.Row(
+                [
+                    ft.Icon(icon, color=color, size=14),
+                    ft.Text(label, size=11, color=color, weight=ft.FontWeight.W_500),
+                ],
                 spacing=4,
                 tight=True,
             ),
-            padding=ft.padding.symmetric(horizontal=8, vertical=3),
-            bgcolor=ft.Colors.BLUE_50,
-            border_radius=10,
+            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+            bgcolor=ft.Colors.with_opacity(0.10, color),
+            border_radius=8,
         )
-        title = ft.Column(
-            [
-                ft.Row(
-                    [
-                        ft.Text(self.repo.name, size=16, weight=ft.FontWeight.BOLD),
-                        branch_chip,
-                    ],
-                    spacing=10,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-                ft.Text(str(self.repo.path), size=10, color=ft.Colors.GREY_600),
-            ],
-            spacing=2,
-            tight=True,
-        )
-        status_indicator = ft.Row(
-            [
-                ft.Icon(icon, color=color, size=18),
-                ft.Text(label, size=12, color=color, weight=ft.FontWeight.W_500),
-            ],
-            spacing=4,
-        )
+
+        # Right cluster: action buttons (only if there is something to act on)
+        right: list[ft.Control] = []
+
+        if self.repo.has_changes:
+            right.append(
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Icon(ft.Icons.EDIT_NOTE, size=14, color=ft.Colors.AMBER_800),
+                            ft.Text(
+                                f"{len(self.repo.changes)} change"
+                                f"{'s' if len(self.repo.changes) != 1 else ''}",
+                                size=11,
+                                color=ft.Colors.AMBER_900,
+                                weight=ft.FontWeight.W_500,
+                            ),
+                        ],
+                        spacing=4,
+                        tight=True,
+                    ),
+                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                    bgcolor=ft.Colors.AMBER_50,
+                    border_radius=8,
+                )
+            )
+            right.append(self.expand_button)
+            right.append(
+                ft.IconButton(
+                    icon=ft.Icons.AUTO_AWESOME,
+                    tooltip="Generate commit message with AI",
+                    on_click=lambda _: self._generate_message(),
+                    icon_size=18,
+                )
+            )
+            right.append(
+                ft.FilledButton(
+                    "Commit",
+                    icon=ft.Icons.CHECK,
+                    on_click=lambda _: self._commit(),
+                    height=34,
+                )
+            )
+
+        if self.repo.ahead or self.repo.has_changes:
+            right.append(
+                ft.FilledTonalButton(
+                    "Push",
+                    icon=ft.Icons.UPLOAD,
+                    on_click=lambda _: self._push(),
+                    height=34,
+                )
+            )
+
+        if self.repo_config.auto_pilot:
+            right.append(
+                ft.OutlinedButton(
+                    "Auto-pilot",
+                    icon=ft.Icons.ROCKET_LAUNCH,
+                    on_click=lambda _: self._auto_pilot(),
+                    height=34,
+                )
+            )
+
+        if len(self.merge_source.options) > 0:
+            right.append(self.merge_source)
+            right.append(
+                ft.OutlinedButton(
+                    "Merge",
+                    icon=ft.Icons.MERGE_TYPE,
+                    on_click=lambda _: self._merge(),
+                    height=34,
+                )
+            )
+
         return ft.Row(
-            [title, ft.Container(expand=True), status_indicator],
+            [
+                name_text,
+                path_text,
+                branch_chip,
+                status_pill,
+                ft.Container(expand=True),
+                *right,
+            ],
+            spacing=8,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
-    def _files_section(self) -> ft.Control:
-        return ft.Column(
+    # ─────── collapsible body ───────
+
+    def _render_body(self) -> None:
+        if not self.repo.has_changes:
+            self.body_container.content = None
+            self.body_container.visible = False
+            return
+
+        self.body_container.visible = self.expanded
+        self.body_container.content = ft.Column(
             [
-                ft.Row(
-                    [
-                        self.select_all,
-                        self.changes_label,
-                    ],
-                    spacing=4,
-                ),
+                ft.Divider(height=1, color=ft.Colors.GREY_200),
+                ft.Row([self.select_all, self.changes_label], spacing=4),
                 ft.Container(
                     content=self.files_column,
                     padding=ft.padding.only(left=24),
                 ),
+                ft.Container(
+                    content=ft.Row([self.commit_message], spacing=4),
+                    padding=ft.padding.only(top=4),
+                ),
+                self.feedback,
             ],
             spacing=4,
             tight=True,
         )
 
-    def _actions_section(self) -> ft.Control:
-        return ft.Column(
-            [
-                ft.Row(
-                    [
-                        self.commit_message,
-                        ft.IconButton(
-                            icon=ft.Icons.AUTO_AWESOME,
-                            tooltip="Generate commit message with AI",
-                            on_click=lambda _: self._generate_message(),
-                        ),
-                    ],
-                    spacing=4,
-                ),
-                ft.Row(
-                    [
-                        ft.FilledButton(
-                            "Commit",
-                            icon=ft.Icons.CHECK,
-                            on_click=lambda _: self._commit(),
-                        ),
-                        ft.FilledTonalButton(
-                            "Push",
-                            icon=ft.Icons.UPLOAD,
-                            on_click=lambda _: self._push(),
-                        ),
-                        ft.OutlinedButton(
-                            "Auto-pilot",
-                            icon=ft.Icons.ROCKET_LAUNCH,
-                            on_click=lambda _: self._auto_pilot(),
-                            disabled=not self.repo_config.auto_pilot,
-                            tooltip=(
-                                "Enabled in repo settings"
-                                if self.repo_config.auto_pilot
-                                else "Enable auto-pilot in repo settings to use it"
-                            ),
-                        ),
-                        ft.Container(expand=True),
-                        self.merge_source,
-                        ft.OutlinedButton(
-                            "Merge",
-                            icon=ft.Icons.MERGE_TYPE,
-                            on_click=lambda _: self._merge(),
-                        ),
-                    ],
-                    spacing=8,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-            ],
-            spacing=6,
-            tight=True,
-        )
+    def _toggle_expanded(self) -> None:
+        self.expanded = not self.expanded
+        self.expand_button.icon = ft.Icons.EXPAND_LESS if self.expanded else ft.Icons.EXPAND_MORE
+        self.expand_button.tooltip = "Collapse" if self.expanded else "Expand changes"
+        self._render_body()
+        safe_update(self.body_container, self.expand_button)
 
     # ─────── data ───────
 
@@ -250,12 +306,13 @@ class RepoPanel:
                 tooltip="Open diff",
                 on_click=lambda _, c=change: self._open_file_diff(c),
             )
-            row = ft.Row(
-                [checkbox, file_label, status_pill, view_btn],
-                spacing=6,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            items.append(
+                ft.Row(
+                    [checkbox, file_label, status_pill, view_btn],
+                    spacing=6,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                )
             )
-            items.append(row)
 
         if not items:
             items.append(ft.Text("No pending changes.", color=ft.Colors.GREY_500, italic=True, size=12))
@@ -272,8 +329,6 @@ class RepoPanel:
         return f"{n} pending change{'s' if n != 1 else ''} — {sel} selected"
 
     def _status_bg(self, change: FileChange) -> str:
-        from laiagit.models import FileStatus
-
         return {
             FileStatus.UNTRACKED: ft.Colors.GREEN_50,
             FileStatus.ADDED: ft.Colors.GREEN_100,
@@ -320,7 +375,7 @@ class RepoPanel:
         except GitError as exc:
             self._set_feedback(f"Could not load diff: {exc}", error=True)
             return
-        if not diff.strip() and change.status.value == "untracked":
+        if not diff.strip() and change.status == FileStatus.UNTRACKED:
             try:
                 content = (self.repo.path / change.path).read_text(encoding="utf-8", errors="replace")
                 diff = f"--- /dev/null\n+++ b/{change.path}\n@@\n" + "\n".join(
@@ -339,11 +394,14 @@ class RepoPanel:
                 diff = self.git.full_diff(self.repo.path, staged_only=False)
             if not diff.strip():
                 self._set_feedback("Nothing to describe — no changes.", error=True)
+                self._ensure_expanded()
                 return
             self._set_feedback("Generating commit message…")
+            self._ensure_expanded()
             message = self.ai.commit_message(diff, self.repo_config)
         except (GitError, AIBackendError) as exc:
             self._set_feedback(f"AI generation failed: {exc}", error=True)
+            self._ensure_expanded()
             return
         self.commit_message.value = message
         safe_update(self.commit_message)
@@ -353,6 +411,7 @@ class RepoPanel:
         message = (self.commit_message.value or "").strip()
         if not message:
             self._set_feedback("Type or generate a commit message first.", error=True)
+            self._ensure_expanded()
             return
         try:
             self._stage_selected(stage_all_if_empty=True)
@@ -375,6 +434,7 @@ class RepoPanel:
             summary = self.git.push(self.repo.path)
         except GitError as exc:
             self._set_feedback(f"Push failed: {exc}", error=True)
+            self._ensure_expanded()
             return
         self._set_feedback(f"Pushed {self.repo.current_branch}: {summary}")
         self.on_changed()
@@ -403,11 +463,13 @@ class RepoPanel:
         source = self.merge_source.value
         if not source:
             self._set_feedback("Pick a branch to merge from.", error=True)
+            self._ensure_expanded()
             return
         try:
             conflict = self.git.begin_merge(self.repo.path, source)
         except GitError as exc:
             self._set_feedback(f"Merge failed: {exc}", error=True)
+            self._ensure_expanded()
             return
         if conflict is None:
             try:
@@ -425,6 +487,14 @@ class RepoPanel:
         self.on_open_merge(self.repo)
 
     # ─────── helpers ───────
+
+    def _ensure_expanded(self) -> None:
+        if not self.expanded and self.repo.has_changes:
+            self.expanded = True
+            self.expand_button.icon = ft.Icons.EXPAND_LESS
+            self.expand_button.tooltip = "Collapse"
+            self._render_body()
+            safe_update(self.body_container, self.expand_button)
 
     def _stage_selected(self, *, stage_all_if_empty: bool = False) -> None:
         targets = list(self.selected_paths)
