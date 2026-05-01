@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 
 import flet as ft
@@ -64,6 +65,53 @@ class DashboardView:
         )
 
     def _header(self) -> ft.Control:
+        right_items: list[ft.Control] = [self.status_text]
+
+        hidden_count = len(self.config.excluded_repos)
+        if hidden_count > 0:
+            right_items.append(
+                ft.Container(
+                    content=ft.Row(
+                        [
+                            ft.Icon(
+                                ft.Icons.VISIBILITY_OFF,
+                                size=14,
+                                color=ft.Colors.GREY_700,
+                            ),
+                            ft.Text(
+                                f"{hidden_count} hidden",
+                                size=11,
+                                color=ft.Colors.GREY_800,
+                                weight=ft.FontWeight.W_500,
+                            ),
+                        ],
+                        spacing=4,
+                        tight=True,
+                    ),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                    bgcolor=ft.Colors.GREY_200,
+                    border_radius=10,
+                    on_click=lambda _: self.on_open_settings(),
+                    tooltip="Open Settings to restore hidden repos",
+                    ink=True,
+                )
+            )
+
+        right_items.extend(
+            [
+                ft.IconButton(
+                    icon=ft.Icons.REFRESH,
+                    tooltip="Refresh repos",
+                    on_click=lambda _: self.refresh(),
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.SETTINGS,
+                    tooltip="Settings",
+                    on_click=lambda _: self.on_open_settings(),
+                ),
+            ]
+        )
+
         return ft.Container(
             content=ft.Row(
                 [
@@ -79,22 +127,7 @@ class DashboardView:
                         ],
                         spacing=8,
                     ),
-                    ft.Row(
-                        [
-                            self.status_text,
-                            ft.IconButton(
-                                icon=ft.Icons.REFRESH,
-                                tooltip="Refresh repos",
-                                on_click=lambda _: self.refresh(),
-                            ),
-                            ft.IconButton(
-                                icon=ft.Icons.SETTINGS,
-                                tooltip="Settings",
-                                on_click=lambda _: self.on_open_settings(),
-                            ),
-                        ],
-                        spacing=4,
-                    ),
+                    ft.Row(right_items, spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
@@ -138,6 +171,10 @@ class DashboardView:
             self.status_text.value = f"{len(repos)} repos found — loading details (0/{len(repos)})…"
             safe_update(self.panels_column, self.status_text)
             safe_update(self.page)
+            # Hold the skeleton state briefly so the user can perceive the
+            # two-phase load (especially when navigating back from Settings,
+            # where the OS-level filesystem cache makes hydrate near-instant).
+            time.sleep(0.15)
 
             # Phase 2 — hydrate one at a time and swap the skeleton with
             # the real RepoPanel as soon as that repo's git data is ready.
@@ -156,6 +193,10 @@ class DashboardView:
                 self.status_text.value = f"{len(repos)} repos · loading details ({i + 1}/{len(repos)})…"
                 safe_update(self.panels_column, self.status_text)
                 safe_update(self.page)
+                # Small per-repo pause: makes the gradual fill perceptible
+                # without meaningfully slowing the scan on large root folders.
+                if len(repos) <= 20:
+                    time.sleep(0.05)
 
             # Phase 3 — sort by status priority (pending / unpushed / conflict
             # first) once all hydrates are done.
