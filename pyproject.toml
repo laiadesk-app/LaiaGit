@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "laiagit"
+version = "0.0.1"
+description = "Visual desktop dashboard for Git repos with AI-assisted commits, conflicts, and pre-flight checks"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "LaiaDesk" }]
+keywords = ["git", "ai", "desktop", "flet", "ollama", "developer-tools"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: X11 Applications",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Version Control :: Git",
+]
+dependencies = [
+    "flet>=0.21",
+    "gitpython>=3.1",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-mock>=3.12",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+laiagit = "laiagit.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/laiadesk-app/LaiaGit"
+Repository = "https://github.com/laiadesk-app/LaiaGit"
+Issues = "https://github.com/laiadesk-app/LaiaGit/issues"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,5 @@
+# Code owners for LaiaGit
+# These users are required reviewers on any PR touching matching files.
+# Order matters: the last matching pattern wins.
+
+* @laiadesk-app
