@@ -10,6 +10,7 @@ class RepoScanner:
         self.max_depth = max_depth
 
     def scan(self, root: Path) -> list[Repo]:
+        """Scan a single root folder for git repositories."""
         root = root.expanduser().resolve()
         if not root.exists() or not root.is_dir():
             return []
@@ -18,6 +19,48 @@ class RepoScanner:
         for git_dir in self._find_git_dirs(root):
             repo_path = git_dir.parent
             repos.append(Repo(path=repo_path, name=repo_path.name))
+        repos.sort(key=lambda r: r.name.lower())
+        return repos
+
+    def scan_all(self, primary_root: Path, extras: list[Path] | None = None) -> list[Repo]:
+        """Scan the primary root plus any extra paths.
+
+        Each extra path is auto-classified:
+        - If `<path>/.git` exists, treat the path itself as a single repository.
+        - Otherwise, treat it as a folder to scan recursively for repos.
+
+        Repositories are deduplicated by resolved path. Sorted by name.
+        """
+        seen: set[Path] = set()
+        repos: list[Repo] = []
+
+        for repo in self.scan(primary_root):
+            resolved = repo.path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            repos.append(repo)
+
+        for raw in extras or []:
+            path = raw.expanduser().resolve() if isinstance(raw, Path) else Path(raw).expanduser().resolve()
+            if not path.exists():
+                continue
+            git_dir = path / ".git"
+            if git_dir.exists() and git_dir.is_dir():
+                if path in seen:
+                    continue
+                seen.add(path)
+                repos.append(Repo(path=path, name=path.name))
+                continue
+            if not path.is_dir():
+                continue
+            for found in self.scan(path):
+                resolved = found.path.resolve()
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                repos.append(found)
+
         repos.sort(key=lambda r: r.name.lower())
         return repos
 

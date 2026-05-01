@@ -54,6 +54,7 @@ class RepoConfig:
 @dataclass
 class LaiaGitConfig:
     root_folder: str = "~/dev"
+    extra_paths: list[str] = field(default_factory=list)
     default_ai_backend: str = "ollama"
     ai_backends: AIBackendsConfig = field(default_factory=AIBackendsConfig)
     shortcuts_enabled: bool = True
@@ -63,6 +64,10 @@ class LaiaGitConfig:
     @property
     def root_folder_path(self) -> Path:
         return Path(self.root_folder).expanduser().resolve()
+
+    @property
+    def extra_path_paths(self) -> list[Path]:
+        return [Path(p).expanduser().resolve() for p in self.extra_paths if p.strip()]
 
 
 class ConfigService:
@@ -127,6 +132,7 @@ class ConfigService:
         preflight_raw = raw.get("preflight", {})
         return LaiaGitConfig(
             root_folder=raw.get("root_folder", "~/dev"),
+            extra_paths=list(raw.get("extra_paths", [])),
             default_ai_backend=raw.get("default_ai_backend", "ollama"),
             ai_backends=backends,
             shortcuts_enabled=raw.get("shortcuts_enabled", True),
@@ -137,6 +143,7 @@ class ConfigService:
     def _to_dict(self, config: LaiaGitConfig) -> dict[str, Any]:
         return {
             "root_folder": config.root_folder,
+            "extra_paths": config.extra_paths,
             "default_ai_backend": config.default_ai_backend,
             "ai_backends": {
                 "ollama": {

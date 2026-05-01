@@ -49,3 +49,20 @@ def test_repo_config_default_branch_optional(tmp_path: Path) -> None:
     service.save_repo_config(tmp_path, RepoConfig(ai_backend="ollama"))
     reloaded = service.load_repo_config(tmp_path)
     assert reloaded.default_branch is None
+
+
+def test_extra_paths_roundtrip(tmp_path: Path) -> None:
+    service = ConfigService(config_path=tmp_path / "config.yaml")
+    config = LaiaGitConfig(
+        root_folder="/tmp/dev",
+        extra_paths=["/Users/me/work/proj-x", "~/other"],
+    )
+    service.save(config)
+    reloaded = service.load()
+    assert reloaded.extra_paths == ["/Users/me/work/proj-x", "~/other"]
+
+
+def test_extra_paths_default_empty(tmp_path: Path) -> None:
+    service = ConfigService(config_path=tmp_path / "config.yaml")
+    config = service.load()
+    assert config.extra_paths == []
