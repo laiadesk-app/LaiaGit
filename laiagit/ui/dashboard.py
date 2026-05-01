@@ -34,12 +34,19 @@ class DashboardView:
 
         self.panels_column = ft.Column(spacing=0, tight=True)
         self.status_text = ft.Text("", size=12, color=ft.Colors.GREY_700)
+        self.scan_progress = ft.ProgressBar(
+            visible=False,
+            bar_height=2,
+            color=ft.Colors.BLUE_500,
+            bgcolor=ft.Colors.BLUE_50,
+        )
         self.repos: list[Repo] = []
 
     def build(self) -> ft.Control:
         return ft.Column(
             [
                 self._header(),
+                self.scan_progress,
                 ft.Divider(height=1),
                 ft.Container(
                     content=ft.Column(
@@ -96,7 +103,8 @@ class DashboardView:
 
     def refresh(self) -> None:
         self.status_text.value = "Scanning…"
-        safe_update(self.status_text)
+        self.scan_progress.visible = True
+        safe_update(self.status_text, self.scan_progress)
 
         self.repos = self.scanner.scan_all(
             self.config.root_folder_path,
@@ -135,7 +143,8 @@ class DashboardView:
             if self.repos
             else f"0 repos in {self.config.root_folder_path}"
         )
-        safe_update(self.panels_column, self.status_text)
+        self.scan_progress.visible = False
+        safe_update(self.panels_column, self.status_text, self.scan_progress)
 
     def _empty_state(self) -> ft.Control:
         return ft.Container(
