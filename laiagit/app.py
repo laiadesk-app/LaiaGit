@@ -11,7 +11,6 @@ from laiagit.services import (
 )
 from laiagit.ui.dashboard import DashboardView
 from laiagit.ui.merge_view import MergeView
-from laiagit.ui.repo_detail import RepoDetailView
 from laiagit.ui.settings import SettingsView
 
 
@@ -43,23 +42,13 @@ class LaiaGitApp:
             config=self.config,
             scanner=self.scanner,
             git=self.git,
-            on_open_repo=self._show_repo,
+            ai=self.ai,
+            config_service=self.config_service,
             on_open_settings=self._show_settings,
+            on_open_merge=self._show_merge,
         )
         self._render(self.dashboard.build())
         self.dashboard.refresh()
-
-    def _show_repo(self, repo: Repo) -> None:
-        view = RepoDetailView(
-            page=self.page,
-            repo=repo,
-            git=self.git,
-            ai=self.ai,
-            config_service=self.config_service,
-            on_back=self._show_dashboard,
-            on_merge=self._show_merge,
-        )
-        self._render(view.build())
 
     def _show_merge(self, repo: Repo) -> None:
         view = MergeView(
@@ -68,7 +57,7 @@ class LaiaGitApp:
             git=self.git,
             ai=self.ai,
             config_service=self.config_service,
-            on_back=lambda: self._show_repo(repo),
+            on_back=self._show_dashboard,
         )
         self._render(view.build())
 
