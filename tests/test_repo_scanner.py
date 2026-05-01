@@ -63,3 +63,26 @@ def test_scan_all_ignores_missing_extras(root_with_repos: Path, tmp_path: Path) 
     scanner = RepoScanner()
     repos = scanner.scan_all(root_with_repos, [tmp_path / "does-not-exist"])
     assert sorted(r.name for r in repos) == ["alpha", "beta"]
+
+
+def test_scan_all_filters_excluded(root_with_repos: Path) -> None:
+    scanner = RepoScanner()
+    excluded = {(root_with_repos / "alpha").resolve()}
+    repos = scanner.scan_all(root_with_repos, excluded=excluded)
+    names = [r.name for r in repos]
+    assert names == ["beta"]
+
+
+def test_scan_all_excluded_works_for_extra_repos(root_with_repos: Path, tmp_path: Path) -> None:
+    """A direct repo passed via extras is also excludable by path."""
+    import subprocess
+
+    standalone = tmp_path / "standalone"
+    standalone.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=standalone, check=True, capture_output=True)
+    scanner = RepoScanner()
+    excluded = {standalone.resolve()}
+    repos = scanner.scan_all(root_with_repos, [standalone], excluded=excluded)
+    names = sorted(r.name for r in repos)
+    assert names == ["alpha", "beta"]
+    assert "standalone" not in names

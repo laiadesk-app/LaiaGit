@@ -56,27 +56,29 @@ class GitService:
             return None
 
     def _branches(self, git_repo: GitRepo) -> list[BranchInfo]:
+        """List local branches without per-branch ahead/behind.
+
+        Computing ahead/behind for every branch via `iter_commits` was the
+        bottleneck for repos with many branches or long histories — it could
+        keep the dashboard 'loading' for tens of seconds. The current branch's
+        ahead/behind is computed separately in `_ahead_behind` (capped).
+        """
         current = self._current_branch(git_repo)
         branches: list[BranchInfo] = []
         for head in git_repo.heads:
-            upstream_name: str | None = None
-            ahead = behind = 0
-            tracking = head.tracking_branch()
-            if tracking is not None:
-                upstream_name = tracking.name
-                try:
-                    ahead = sum(1 for _ in git_repo.iter_commits(f"{tracking.name}..{head.name}"))
-                    behind = sum(1 for _ in git_repo.iter_commits(f"{head.name}..{tracking.name}"))
-                except GitCommandError:
-                    ahead = behind = 0
+            try:
+                tracking = head.tracking_branch()
+                upstream_name = tracking.name if tracking is not None else None
+            except Exception:  # noqa: BLE001
+                upstream_name = None
             branches.append(
                 BranchInfo(
                     name=head.name,
                     is_current=(head.name == current),
                     is_remote=False,
                     upstream=upstream_name,
-                    ahead=ahead,
-                    behind=behind,
+                    ahead=0,
+                    behind=0,
                 )
             )
         branches.sort(key=lambda b: (not b.is_current, b.name.lower()))
@@ -141,17 +143,28 @@ class GitService:
         }
         return mapping.get(change_type, FileStatus.MODIFIED)
 
-    def _ahead_behind(self, git_repo: GitRepo) -> tuple[int, int]:
+    def _ahead_behind(self, git_repo: GitRepo, *, max_count: int = 100) -> tuple[int, int]:
+        """Compute ahead/behind vs upstream for the current branch.
+
+        Caps each side at `max_count` to keep the scan fast on huge repos.
+        """
         try:
             head = git_repo.active_branch
         except TypeError:
             return 0, 0
-        tracking = head.tracking_branch()
+        try:
+            tracking = head.tracking_branch()
+        except Exception:  # noqa: BLE001
+            return 0, 0
         if tracking is None:
             return 0, 0
         try:
-            ahead = sum(1 for _ in git_repo.iter_commits(f"{tracking.name}..{head.name}"))
-            behind = sum(1 for _ in git_repo.iter_commits(f"{head.name}..{tracking.name}"))
+            ahead = sum(
+                1 for _ in git_repo.iter_commits(f"{tracking.name}..{head.name}", max_count=max_count)
+            )
+            behind = sum(
+                1 for _ in git_repo.iter_commits(f"{head.name}..{tracking.name}", max_count=max_count)
+            )
             return ahead, behind
         except GitCommandError:
             return 0, 0
