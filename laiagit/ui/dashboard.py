@@ -275,29 +275,40 @@ class DashboardView:
     def _reorder_repo(self, repo: Repo, direction: str) -> None:
         """Move a repo up/down/top/bottom in the visible order.
 
-        Snapshots the current visible order into `config.repo_order`,
-        applies the move, persists, refreshes.
+        In-place: reshuffles the already-loaded panels and persists the
+        new order. No filesystem scan or git hydrate — those happened
+        during the previous refresh and the data is still valid.
         """
         if not self.repos:
+            return
+        panels = list(self.panels_column.controls)
+        if len(panels) != len(self.repos):
+            self.refresh()
             return
         try:
             current_index = next(i for i, r in enumerate(self.repos) if str(r.path) == str(repo.path))
         except StopIteration:
             return
 
-        new_repos = list(self.repos)
-        item = new_repos.pop(current_index)
         if direction == "top":
-            new_repos.insert(0, item)
+            new_index = 0
         elif direction == "bottom":
-            new_repos.append(item)
+            new_index = len(self.repos) - 1
         elif direction == "up":
-            new_repos.insert(max(0, current_index - 1), item)
+            new_index = max(0, current_index - 1)
         elif direction == "down":
-            new_repos.insert(min(len(new_repos), current_index + 1), item)
+            new_index = min(len(self.repos) - 1, current_index + 1)
         else:
             return
+        if new_index == current_index:
+            return
 
+        new_repos = list(self.repos)
+        new_repos.insert(new_index, new_repos.pop(current_index))
+        panels.insert(new_index, panels.pop(current_index))
+
+        self.repos = new_repos
+        self.panels_column.controls = panels
         self.config.repo_order = [str(r.path) for r in new_repos]
         try:
             self.config_service.save(self.config)
@@ -305,7 +316,7 @@ class DashboardView:
             self.status_text.value = f"Could not save order: {exc}"
             safe_update(self.status_text)
             return
-        self.refresh()
+        safe_update(self.panels_column)
 
     def _request_exclude(self, repo: Repo) -> None:
         """Open a confirmation dialog before hiding a repo."""
