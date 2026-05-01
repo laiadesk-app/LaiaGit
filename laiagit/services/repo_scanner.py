@@ -22,24 +22,36 @@ class RepoScanner:
         repos.sort(key=lambda r: r.name.lower())
         return repos
 
-    def scan_all(self, primary_root: Path, extras: list[Path] | None = None) -> list[Repo]:
-        """Scan the primary root plus any extra paths.
+    def scan_all(
+        self,
+        primary_root: Path,
+        extras: list[Path] | None = None,
+        excluded: set[Path] | None = None,
+    ) -> list[Repo]:
+        """Scan the primary root plus any extra paths, dropping excluded repos.
 
         Each extra path is auto-classified:
         - If `<path>/.git` exists, treat the path itself as a single repository.
         - Otherwise, treat it as a folder to scan recursively for repos.
 
+        `excluded` is a set of resolved Paths the user has chosen to hide; any
+        match is filtered out before being returned (and never hydrated).
         Repositories are deduplicated by resolved path. Sorted by name.
         """
         seen: set[Path] = set()
         repos: list[Repo] = []
+        excluded_set: set[Path] = excluded or set()
+
+        def _accept(repo: Repo) -> bool:
+            resolved = repo.path.resolve()
+            if resolved in seen or resolved in excluded_set:
+                return False
+            seen.add(resolved)
+            return True
 
         for repo in self.scan(primary_root):
-            resolved = repo.path.resolve()
-            if resolved in seen:
-                continue
-            seen.add(resolved)
-            repos.append(repo)
+            if _accept(repo):
+                repos.append(repo)
 
         for raw in extras or []:
             path = raw.expanduser().resolve() if isinstance(raw, Path) else Path(raw).expanduser().resolve()
@@ -47,19 +59,15 @@ class RepoScanner:
                 continue
             git_dir = path / ".git"
             if git_dir.exists() and git_dir.is_dir():
-                if path in seen:
-                    continue
-                seen.add(path)
-                repos.append(Repo(path=path, name=path.name))
+                candidate = Repo(path=path, name=path.name)
+                if _accept(candidate):
+                    repos.append(candidate)
                 continue
             if not path.is_dir():
                 continue
             for found in self.scan(path):
-                resolved = found.path.resolve()
-                if resolved in seen:
-                    continue
-                seen.add(resolved)
-                repos.append(found)
+                if _accept(found):
+                    repos.append(found)
 
         repos.sort(key=lambda r: r.name.lower())
         return repos

@@ -36,6 +36,7 @@ class RepoPanel:
         config_service: ConfigService,
         on_changed: Callable[[], None],
         on_open_merge: Callable[[Repo], None],
+        on_exclude: Callable[[Repo], None] | None = None,
     ):
         self.page = page
         self.repo = repo
@@ -44,6 +45,7 @@ class RepoPanel:
         self.config_service = config_service
         self.on_changed = on_changed
         self.on_open_merge = on_open_merge
+        self.on_exclude = on_exclude
         self.repo_config = config_service.load_repo_config(repo.path)
         self.selected_paths: set[str] = set()
         self.expanded: bool = False
@@ -66,8 +68,7 @@ class RepoPanel:
             hint_style=ft.TextStyle(size=11, color=ft.Colors.GREY_500),
             on_select=lambda _: self._refresh_merge_button(),
             tooltip=(
-                f"Branch to merge into `{self.repo.current_branch}` "
-                f"(your current branch is the destination)"
+                f"Branch to merge into `{self.repo.current_branch}` (your current branch is the destination)"
             ),
         )
         self.merge_button: ft.OutlinedButton | None = None
@@ -221,12 +222,19 @@ class RepoPanel:
                 icon=ft.Icons.MERGE_TYPE,
                 on_click=lambda _: self._merge(),
                 height=34,
-                tooltip=(
-                    f"Merges the chosen source branch into "
-                    f"`{self.repo.current_branch or 'current'}`."
-                ),
+                tooltip=(f"Merges the chosen source branch into `{self.repo.current_branch or 'current'}`."),
             )
             right.append(self.merge_button)
+
+        if self.on_exclude is not None:
+            right.append(
+                ft.IconButton(
+                    icon=ft.Icons.VISIBILITY_OFF_OUTLINED,
+                    icon_size=18,
+                    tooltip="Hide this repo from the dashboard (manage in Settings)",
+                    on_click=lambda _: self._exclude_clicked(),
+                )
+            )
 
         return ft.Row(
             [
@@ -463,11 +471,7 @@ class RepoPanel:
         return " ".join(parts)
 
     def _merge_options(self) -> list[ft.dropdown.Option]:
-        return [
-            ft.dropdown.Option(b.name)
-            for b in self.repo.branches
-            if b.name != self.repo.current_branch
-        ]
+        return [ft.dropdown.Option(b.name) for b in self.repo.branches if b.name != self.repo.current_branch]
 
     def _merge_button_text(self) -> str:
         current = self.repo.current_branch or "current"
@@ -481,6 +485,12 @@ class RepoPanel:
             return
         self.merge_button.text = self._merge_button_text()
         safe_update(self.merge_button)
+
+    def _exclude_clicked(self) -> None:
+        if self.on_exclude is None:
+            return
+        self._set_feedback(f"Excluding `{self.repo.name}`…")
+        self.on_exclude(self.repo)
 
     # ─────── interactions ───────
 

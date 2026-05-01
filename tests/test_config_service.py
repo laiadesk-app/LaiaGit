@@ -66,3 +66,16 @@ def test_extra_paths_default_empty(tmp_path: Path) -> None:
     service = ConfigService(config_path=tmp_path / "config.yaml")
     config = service.load()
     assert config.extra_paths == []
+
+
+def test_excluded_repos_roundtrip(tmp_path: Path) -> None:
+    service = ConfigService(config_path=tmp_path / "config.yaml")
+    config = LaiaGitConfig(
+        excluded_repos=["/Users/me/dev/legacy", "/Users/me/dev/sandbox"],
+    )
+    service.save(config)
+    reloaded = service.load()
+    assert reloaded.excluded_repos == [
+        "/Users/me/dev/legacy",
+        "/Users/me/dev/sandbox",
+    ]

@@ -118,6 +118,7 @@ class DashboardView:
             repos = self.scanner.scan_all(
                 self.config.root_folder_path,
                 self.config.extra_path_paths,
+                self.config.excluded_repo_paths,
             )
             for r in repos:
                 self.git.hydrate(r)
@@ -141,6 +142,7 @@ class DashboardView:
                         config_service=self.config_service,
                         on_changed=self.refresh,
                         on_open_merge=self.on_open_merge,
+                        on_exclude=self._exclude_repo,
                     ).build()
                     for repo in repos
                 ]
@@ -160,6 +162,19 @@ class DashboardView:
             self.scan_progress.visible = False
             safe_update(self.panels_column, self.status_text, self.scan_progress)
             safe_update(self.page)
+
+    def _exclude_repo(self, repo: Repo) -> None:
+        path_str = str(repo.path)
+        if path_str in self.config.excluded_repos:
+            return
+        self.config.excluded_repos.append(path_str)
+        try:
+            self.config_service.save(self.config)
+        except OSError as exc:
+            self.status_text.value = f"Could not save exclusion: {exc}"
+            safe_update(self.status_text)
+            return
+        self.refresh()
 
     def _loading_placeholder(self) -> ft.Control:
         return ft.Container(

@@ -99,6 +99,8 @@ class SettingsView:
             on_submit=lambda _: self._add_extra_path(),
         )
 
+        self.excluded_repos_list = ft.Column(spacing=4, tight=True)
+
         # FilePicker is a Service in Flet 0.84+, not a Control — it must
         # live in `page.services`, not `page.overlay`. Reuse an existing
         # one if present so re-entering Settings doesn't accumulate copies.
@@ -115,6 +117,7 @@ class SettingsView:
     def build(self) -> ft.Control:
         self._update_detection()
         self._render_extra_paths()
+        self._render_excluded_repos()
         return ft.Column(
             [
                 self._header(),
@@ -166,6 +169,18 @@ class SettingsView:
                                 spacing=8,
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             ),
+                            ft.Text(
+                                "Excluded repos",
+                                size=13,
+                                weight=ft.FontWeight.W_500,
+                                color=ft.Colors.GREY_800,
+                            ),
+                            ft.Text(
+                                "Repos hidden from the dashboard. Click 🗑 to bring one back.",
+                                size=11,
+                                color=ft.Colors.GREY_600,
+                            ),
+                            self.excluded_repos_list,
                             ft.Divider(),
                             ft.Text("AI backends", size=14, weight=ft.FontWeight.BOLD),
                             self.detection_text,
@@ -254,9 +269,7 @@ class SettingsView:
 
     async def _async_pick_folder(self, target: str) -> None:
         try:
-            picked = await self.folder_picker.get_directory_path(
-                dialog_title="Pick a folder"
-            )
+            picked = await self.folder_picker.get_directory_path(dialog_title="Pick a folder")
         except Exception as exc:  # noqa: BLE001
             self._set_feedback(f"Folder picker unavailable: {exc}", error=True)
             return
@@ -315,6 +328,48 @@ class SettingsView:
             spacing=8,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
+
+    def _render_excluded_repos(self) -> None:
+        if not self.config.excluded_repos:
+            self.excluded_repos_list.controls = [
+                ft.Text(
+                    "No repos excluded.",
+                    size=11,
+                    color=ft.Colors.GREY_500,
+                    italic=True,
+                )
+            ]
+        else:
+            self.excluded_repos_list.controls = [self._excluded_row(p) for p in self.config.excluded_repos]
+        safe_update(self.excluded_repos_list)
+
+    def _excluded_row(self, path: str) -> ft.Control:
+        return ft.Row(
+            [
+                ft.Icon(ft.Icons.VISIBILITY_OFF, size=16, color=ft.Colors.GREY_600),
+                ft.Text(
+                    path,
+                    size=12,
+                    expand=True,
+                    no_wrap=True,
+                    overflow=ft.TextOverflow.ELLIPSIS,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    icon_size=18,
+                    tooltip="Re-include this repo",
+                    on_click=lambda _, p=path: self._unexclude_repo(p),
+                ),
+            ],
+            spacing=8,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+    def _unexclude_repo(self, path: str) -> None:
+        if path in self.config.excluded_repos:
+            self.config.excluded_repos.remove(path)
+            self._render_excluded_repos()
+            self._set_feedback(f"Re-included `{path}`. Click Save to persist.")
 
     def _add_extra_path(self) -> None:
         raw = (self.extra_path_input.value or "").strip()
