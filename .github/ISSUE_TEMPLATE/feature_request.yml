@@ -1,0 +1,42 @@
+name: Feature request
+description: Suggest an idea or enhancement
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement to LaiaGit.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem you're trying to solve
+      description: What hurts today? Describe the pain, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed solution
+      description: How would you like LaiaGit to behave?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you've tried, or other approaches you ruled out.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How important is this for your daily workflow?
+      options:
+        - "Nice to have"
+        - "Would use it often"
+        - "I can't use LaiaGit without this"
+    validations:
+      required: true

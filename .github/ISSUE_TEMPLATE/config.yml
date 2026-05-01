@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/laiadesk-app/LaiaGit/discussions
+    about: Use Discussions for usage questions, ideas, or open conversations.
+  - name: Security vulnerability
+    url: https://github.com/laiadesk-app/LaiaGit/security/advisories/new
+    about: Report a security issue privately. Do NOT open a public issue.
