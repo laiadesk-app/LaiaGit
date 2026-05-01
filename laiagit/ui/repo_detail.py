@@ -14,6 +14,7 @@ from laiagit.services import (
     PreflightService,
     WarningLevel,
 )
+from laiagit.ui._utils import safe_update
 from laiagit.ui.components.file_diff import diff_view
 
 
@@ -154,8 +155,7 @@ class RepoDetailView:
         if not items:
             items.append(ft.Text("No changes.", color=ft.Colors.GREY_600, italic=True))
         self.files_list.controls = items
-        if self.files_list.page is not None:
-            self.files_list.update()
+        safe_update(self.files_list)
 
     def _branches_view(self) -> ft.Control:
         rows: list[ft.Control] = []
@@ -226,8 +226,7 @@ class RepoDetailView:
             self._set_feedback(f"Could not load diff: {exc}", error=True)
             return
         self.diff_panel.content = diff_view(diff)
-        if self.diff_panel.page is not None:
-            self.diff_panel.update()
+        safe_update(self.diff_panel)
 
     def _generate_message(self) -> None:
         self._set_feedback("Generating commit message…")
@@ -241,8 +240,7 @@ class RepoDetailView:
             self._set_feedback(f"AI generation failed: {exc}", error=True)
             return
         self.commit_message.value = message
-        if self.commit_message.page is not None:
-            self.commit_message.update()
+        safe_update(self.commit_message)
         self._set_feedback("Message generated. Edit if needed before committing.")
 
     def _commit(self) -> None:
@@ -264,8 +262,7 @@ class RepoDetailView:
         self.selected_paths.clear()
         self._set_feedback(f"Committed {sha[:7]}.")
         self._refresh_files()
-        if self.commit_message.page is not None:
-            self.commit_message.update()
+        safe_update(self.commit_message)
 
     def _push(self) -> None:
         try:
@@ -325,8 +322,7 @@ class RepoDetailView:
     def _set_feedback(self, message: str, *, error: bool = False) -> None:
         self.feedback.value = message
         self.feedback.color = ft.Colors.RED_400 if error else ft.Colors.GREY_700
-        if self.feedback.page is not None:
-            self.feedback.update()
+        safe_update(self.feedback)
 
 
 class _PreflightBlockedError(Exception):

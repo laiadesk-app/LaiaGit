@@ -7,6 +7,7 @@ import flet as ft
 from laiagit.ai_backends import AIBackendError
 from laiagit.models import Conflict, ConflictFile, Repo, ResolutionConfidence
 from laiagit.services import AIService, ConfigService, GitError, GitService
+from laiagit.ui._utils import safe_update
 from laiagit.ui.components.conflict_panel import conflict_panel
 
 
@@ -238,10 +239,7 @@ class MergeView:
     def _set_feedback(self, message: str, *, error: bool = False) -> None:
         self.feedback.value = message
         self.feedback.color = ft.Colors.RED_400 if error else ft.Colors.GREY_700
-        if self.feedback.page is not None:
-            self.feedback.update()
+        safe_update(self.feedback)
 
     def _maybe_update(self, *controls: ft.Control) -> None:
-        for c in controls:
-            if c.page is not None:
-                c.update()
+        safe_update(*controls)
