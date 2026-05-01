@@ -268,23 +268,30 @@ class RepoPanel:
             dot = "● " if branch.is_current else "    "
             items.append(
                 ft.PopupMenuItem(
-                    text=f"{dot}{branch.name}{star}",
+                    content=ft.Text(f"{dot}{branch.name}{star}", size=12),
                     on_click=lambda _, b=branch.name: self._switch_branch(b),
                 )
             )
-        items.append(ft.PopupMenuItem())  # divider
 
-        if not is_default:
+        if not is_default and self.repo.current_branch:
             items.append(
                 ft.PopupMenuItem(
-                    text=f"★ Set `{current}` as default",
+                    content=ft.Text(
+                        f"★ Set '{current}' as default",
+                        size=12,
+                        color=ft.Colors.AMBER_800,
+                    ),
                     on_click=lambda _: self._set_default_branch(current),
                 )
             )
         if default:
             items.append(
                 ft.PopupMenuItem(
-                    text=f"Clear default ({default})",
+                    content=ft.Text(
+                        f"Clear default ({default})",
+                        size=12,
+                        color=ft.Colors.GREY_700,
+                    ),
                     on_click=lambda _: self._clear_default_branch(),
                 )
             )
