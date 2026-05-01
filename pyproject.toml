@@ -54,3 +54,22 @@ ignore = ["UP042"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.flet]
+org = "com.laiadesk"
+product = "LaiaGit"
+company = "LAIADesk"
+copyright = "Copyright (C) 2026 LAIADesk"
+
+[tool.flet.app]
+path = "."
+module = "laiagit"
+
+[tool.flet.macos]
+bundle_id = "com.laiadesk.laiagit"
+
+[tool.flet.windows]
+publisher = "LAIADesk"
+
+[tool.flet.linux]
+bundle_id = "com.laiadesk.laiagit"

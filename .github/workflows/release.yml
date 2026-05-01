@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.1.0-alpha). Required for manual runs; ignored on tag pushes."
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos
+            runner: macos-latest
+            flet_target: macos
+            artifact_glob: build/macos/**
+            artifact_name: LaiaGit-macos
+          - os: windows
+            runner: windows-latest
+            flet_target: windows
+            artifact_glob: build/windows/**
+            artifact_name: LaiaGit-windows
+          - os: linux
+            runner: ubuntu-latest
+            flet_target: linux
+            artifact_glob: build/linux/**
+            artifact_name: LaiaGit-linux
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.4"
+          channel: stable
+          cache: true
+
+      - name: Linux build deps
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Install Flet CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install "flet>=0.21" "flet-cli>=0.21"
+
+      - name: Install project deps
+        run: pip install -e .
+
+      - name: Build ${{ matrix.flet_target }}
+        run: flet build ${{ matrix.flet_target }} --module-name laiagit
+
+      - name: Package macOS as zip
+        if: matrix.os == 'macos'
+        run: |
+          cd build/macos
+          zip -r ../../LaiaGit-macos.zip .
+          cd ../..
+          ls -la LaiaGit-macos.zip
+
+      - name: Package Windows as zip
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/* -DestinationPath LaiaGit-windows.zip
+          Get-Item LaiaGit-windows.zip
+
+      - name: Package Linux as tar.gz
+        if: matrix.os == 'linux'
+        run: |
+          tar -czf LaiaGit-linux.tar.gz -C build/linux .
+          ls -la LaiaGit-linux.tar.gz
+
+      - name: Upload macOS artifact
+        if: matrix.os == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: LaiaGit-macos.zip
+
+      - name: Upload Windows artifact
+        if: matrix.os == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: LaiaGit-windows.zip
+
+      - name: Upload Linux artifact
+        if: matrix.os == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: LaiaGit-linux.tar.gz
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f -maxdepth 3
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/LaiaGit-macos/LaiaGit-macos.zip
+            artifacts/LaiaGit-windows/LaiaGit-windows.zip
+            artifacts/LaiaGit-linux/LaiaGit-linux.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
