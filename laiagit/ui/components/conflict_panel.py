@@ -33,7 +33,7 @@ def conflict_panel(
     )
 
     accept_button = ft.FilledButton(
-        text="Accept resolution" if not cf.accepted else "Accepted",
+        content="Accept resolution" if not cf.accepted else "Accepted",
         icon=ft.Icons.CHECK if not cf.accepted else ft.Icons.CHECK_CIRCLE,
         on_click=lambda _: on_accept(cf),
         disabled=cf.accepted,

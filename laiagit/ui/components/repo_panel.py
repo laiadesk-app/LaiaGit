@@ -524,7 +524,7 @@ class RepoPanel:
     def _refresh_merge_button(self) -> None:
         if self.merge_button is None:
             return
-        self.merge_button.text = self._merge_button_text()
+        self.merge_button.content = self._merge_button_text()
         safe_update(self.merge_button)
 
     def _compact_button(
@@ -541,14 +541,16 @@ class RepoPanel:
             padding=ft.padding.symmetric(horizontal=10, vertical=2),
             shape=ft.RoundedRectangleBorder(radius=6),
         )
-        common = {
-            "text": label,
+        # Flet 0.84 dropped the `text` kwarg on buttons in favour of `content`.
+        common: dict = {
+            "content": label,
             "icon": icon,
             "on_click": lambda _: on_click(),
             "height": 30,
             "style": style,
-            "tooltip": tooltip,
         }
+        if tooltip is not None:
+            common["tooltip"] = tooltip
         if kind == "filled":
             return ft.FilledButton(**common)
         if kind == "tonal":
