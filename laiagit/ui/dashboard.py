@@ -5,10 +5,10 @@ from collections.abc import Callable
 import flet as ft
 
 from laiagit.models import Repo
-from laiagit.services import GitService, RepoScanner
+from laiagit.services import AIService, ConfigService, GitService, RepoScanner
 from laiagit.services.config_service import LaiaGitConfig
 from laiagit.ui._utils import safe_update
-from laiagit.ui.components.repo_card import repo_card
+from laiagit.ui.components.repo_panel import RepoPanel
 
 
 class DashboardView:
@@ -18,16 +18,21 @@ class DashboardView:
         config: LaiaGitConfig,
         scanner: RepoScanner,
         git: GitService,
-        on_open_repo: Callable[[Repo], None],
+        ai: AIService,
+        config_service: ConfigService,
         on_open_settings: Callable[[], None],
+        on_open_merge: Callable[[Repo], None],
     ):
         self.page = page
         self.config = config
         self.scanner = scanner
         self.git = git
-        self.on_open_repo = on_open_repo
+        self.ai = ai
+        self.config_service = config_service
         self.on_open_settings = on_open_settings
-        self.cards_container = ft.Row(wrap=True, spacing=14, run_spacing=14)
+        self.on_open_merge = on_open_merge
+
+        self.panels_column = ft.Column(spacing=0, tight=True)
         self.status_text = ft.Text("", size=12, color=ft.Colors.GREY_700)
         self.repos: list[Repo] = []
 
@@ -38,11 +43,11 @@ class DashboardView:
                 ft.Divider(height=1),
                 ft.Container(
                     content=ft.Column(
-                        [self.cards_container],
+                        [self.panels_column],
                         scroll=ft.ScrollMode.AUTO,
                         expand=True,
                     ),
-                    padding=16,
+                    padding=ft.padding.symmetric(horizontal=16, vertical=12),
                     expand=True,
                 ),
             ],
@@ -92,14 +97,42 @@ class DashboardView:
     def refresh(self) -> None:
         self.status_text.value = "Scanning…"
         safe_update(self.status_text)
+
         self.repos = self.scanner.scan(self.config.root_folder_path)
         for r in self.repos:
             self.git.hydrate(r)
-        self.cards_container.controls = [repo_card(r, self.on_open_repo) for r in self.repos] or [
-            self._empty_state()
-        ]
-        self.status_text.value = f"{len(self.repos)} repos in {self.config.root_folder_path}"
-        safe_update(self.cards_container, self.status_text)
+
+        # Sort: repos with pending changes / unpushed first
+        self.repos.sort(
+            key=lambda r: (
+                r.status.value not in ("pending", "conflict", "unpushed"),
+                r.name.lower(),
+            )
+        )
+
+        if not self.repos:
+            self.panels_column.controls = [self._empty_state()]
+        else:
+            self.panels_column.controls = [
+                RepoPanel(
+                    page=self.page,
+                    repo=repo,
+                    git=self.git,
+                    ai=self.ai,
+                    config_service=self.config_service,
+                    on_changed=self.refresh,
+                    on_open_merge=self.on_open_merge,
+                ).build()
+                for repo in self.repos
+            ]
+
+        actionable = sum(1 for r in self.repos if r.status.value in ("pending", "unpushed", "conflict"))
+        self.status_text.value = (
+            f"{len(self.repos)} repos · {actionable} need attention"
+            if self.repos
+            else f"0 repos in {self.config.root_folder_path}"
+        )
+        safe_update(self.panels_column, self.status_text)
 
     def _empty_state(self) -> ft.Control:
         return ft.Container(
