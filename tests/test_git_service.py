@@ -70,6 +70,44 @@ def test_invalid_repo_raises(tmp_path: Path) -> None:
         git.open(tmp_path)
 
 
+def test_checkout_branch_clean(tmp_git_repo: Path) -> None:
+    git = GitService()
+    from git import Repo as GitRepo
+
+    git_repo = GitRepo(str(tmp_git_repo))
+    git_repo.create_head("feature")
+    result = git.checkout_branch(tmp_git_repo, "feature")
+    assert result == "switched"
+    assert GitRepo(str(tmp_git_repo)).active_branch.name == "feature"
+
+
+def test_checkout_branch_with_dirty_workspace_carries_changes(tmp_git_repo: Path) -> None:
+    """If the workspace has uncommitted edits, checkout should auto-stash + pop them."""
+    from git import Repo as GitRepo
+
+    git_repo = GitRepo(str(tmp_git_repo))
+    git_repo.create_head("feature")
+    # Dirty: modify a tracked file (no staging, no commit)
+    (tmp_git_repo / "README.md").write_text("hello\nedited\n")
+    git = GitService()
+    result = git.checkout_branch(tmp_git_repo, "feature")
+    assert result in ("switched", "switched-with-stash")
+    assert GitRepo(str(tmp_git_repo)).active_branch.name == "feature"
+    # The edit should still be present after the switch
+    assert "edited" in (tmp_git_repo / "README.md").read_text()
+
+
+def test_checkout_branch_unknown_raises(tmp_git_repo: Path) -> None:
+    git = GitService()
+    with pytest.raises(GitError):
+        git.checkout_branch(tmp_git_repo, "no-such-branch")
+
+
+def test_checkout_branch_noop_when_already_there(tmp_git_repo: Path) -> None:
+    git = GitService()
+    assert git.checkout_branch(tmp_git_repo, "main") == "noop"
+
+
 def test_merge_conflict_detection(tmp_git_repo: Path) -> None:
     """Create a real conflict and verify begin_merge returns a Conflict object."""
     git = GitService()

@@ -36,8 +36,16 @@ def test_repo_config_default_when_missing(tmp_path: Path) -> None:
 
 def test_repo_config_save_and_load(tmp_path: Path) -> None:
     service = ConfigService(config_path=tmp_path / "config.yaml")
-    rc = RepoConfig(ai_backend="api", auto_pilot=True)
+    rc = RepoConfig(ai_backend="api", auto_pilot=True, default_branch="main")
     service.save_repo_config(tmp_path, rc)
     reloaded = service.load_repo_config(tmp_path)
     assert reloaded.ai_backend == "api"
     assert reloaded.auto_pilot is True
+    assert reloaded.default_branch == "main"
+
+
+def test_repo_config_default_branch_optional(tmp_path: Path) -> None:
+    service = ConfigService(config_path=tmp_path / "config.yaml")
+    service.save_repo_config(tmp_path, RepoConfig(ai_backend="ollama"))
+    reloaded = service.load_repo_config(tmp_path)
+    assert reloaded.default_branch is None

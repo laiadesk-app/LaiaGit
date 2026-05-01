@@ -47,6 +47,7 @@ class PreflightConfig:
 class RepoConfig:
     ai_backend: str | None = None
     auto_pilot: bool = False
+    default_branch: str | None = None
     preflight: PreflightConfig = field(default_factory=PreflightConfig)
 
 
@@ -95,6 +96,7 @@ class ConfigService:
         return RepoConfig(
             ai_backend=raw.get("ai_backend"),
             auto_pilot=raw.get("auto_pilot", False),
+            default_branch=raw.get("default_branch"),
             preflight=PreflightConfig(**preflight_raw) if preflight_raw else PreflightConfig(),
         )
 
@@ -104,6 +106,7 @@ class ConfigService:
         data = {
             "ai_backend": repo_config.ai_backend,
             "auto_pilot": repo_config.auto_pilot,
+            "default_branch": repo_config.default_branch,
             "preflight": {
                 "block_secrets": repo_config.preflight.block_secrets,
                 "block_todos": repo_config.preflight.block_todos,

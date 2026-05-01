@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 from git import GitCommandError, InvalidGitRepositoryError
@@ -199,6 +200,47 @@ class GitService:
             git_repo.git.reset("HEAD", "--", *files)
         except GitCommandError as exc:
             raise GitError(str(exc)) from exc
+
+    def checkout_branch(self, path: Path, branch: str) -> str:
+        """Checkout `branch`. If the working tree is dirty, stash + checkout + pop.
+
+        Returns a status string for the UI: 'switched', 'switched-with-stash',
+        or 'switched-stash-conflict' (stash kept; user must resolve).
+        """
+        git_repo = self.open(path)
+        if branch not in [h.name for h in git_repo.heads]:
+            raise GitError(f"Branch `{branch}` does not exist locally")
+        try:
+            current = git_repo.active_branch.name
+        except TypeError:
+            current = None
+        if current == branch:
+            return "noop"
+
+        try:
+            git_repo.git.checkout(branch)
+            return "switched"
+        except GitCommandError:
+            pass
+
+        stash_label = f"laiagit-auto-stash-{branch}"
+        try:
+            git_repo.git.stash("push", "--include-untracked", "-m", stash_label)
+        except GitCommandError as exc:
+            raise GitError(f"Could not stash before switching: {exc}") from exc
+
+        try:
+            git_repo.git.checkout(branch)
+        except GitCommandError as exc:
+            with contextlib.suppress(GitCommandError):
+                git_repo.git.stash("pop")
+            raise GitError(f"Checkout failed; stash restored: {exc}") from exc
+
+        try:
+            git_repo.git.stash("pop")
+            return "switched-with-stash"
+        except GitCommandError:
+            return "switched-stash-conflict"
 
     def commit(self, path: Path, message: str) -> str:
         if not message.strip():
