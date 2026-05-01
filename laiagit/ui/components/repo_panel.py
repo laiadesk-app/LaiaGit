@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 
 import flet as ft
@@ -57,10 +58,14 @@ class RepoPanel:
             expand=True,
         )
         self.merge_source = ft.Dropdown(
-            label="Merge from",
+            label="Source branch",
+            hint_text="pick a branch",
             options=self._merge_options(),
-            width=160,
+            width=170,
             dense=True,
+            tooltip=(
+                f"Branch to merge into `{self.repo.current_branch}` (your current branch is the destination)"
+            ),
         )
         self.feedback = ft.Text("", size=11, color=ft.Colors.GREY_700, selectable=True)
         self.files_column = ft.Column(spacing=2, tight=True)
@@ -77,6 +82,14 @@ class RepoPanel:
             on_click=lambda _: self._toggle_expanded(),
         )
         self.body_container = ft.Container(visible=False)
+        self.progress = ft.ProgressRing(
+            width=18,
+            height=18,
+            stroke_width=2,
+            visible=False,
+            tooltip="Working…",
+        )
+        self.is_busy = False
 
     # ─────── public API ───────
 
@@ -135,7 +148,7 @@ class RepoPanel:
         )
 
         # Right cluster: action buttons (only if there is something to act on)
-        right: list[ft.Control] = []
+        right: list[ft.Control] = [self.progress]
 
         if self.repo.has_changes:
             right.append(
@@ -198,13 +211,15 @@ class RepoPanel:
             )
 
         if len(self.merge_source.options) > 0:
+            current = self.repo.current_branch or "current"
             right.append(self.merge_source)
             right.append(
                 ft.OutlinedButton(
-                    "Merge",
+                    f"Merge into {current}",
                     icon=ft.Icons.MERGE_TYPE,
                     on_click=lambda _: self._merge(),
                     height=34,
+                    tooltip=f"Merges the source branch into `{current}` (your current branch).",
                 )
             )
 
@@ -331,22 +346,26 @@ class RepoPanel:
     def _switch_branch(self, branch: str) -> None:
         if branch == self.repo.current_branch:
             return
-        try:
-            result = self.git.checkout_branch(self.repo.path, branch)
-        except GitError as exc:
-            self._set_feedback(f"Switch failed: {exc}", error=True)
-            return
-        if result == "switched":
-            self._set_feedback(f"Switched to `{branch}`.")
-        elif result == "switched-with-stash":
-            self._set_feedback(f"Switched to `{branch}` and restored your changes.")
-        elif result == "switched-stash-conflict":
-            self._set_feedback(
-                f"Switched to `{branch}`, but stash pop has conflicts. "
-                "Resolve manually with `git stash list` / `git stash pop`.",
-                error=True,
-            )
-        self.on_changed()
+
+        def work() -> None:
+            try:
+                result = self.git.checkout_branch(self.repo.path, branch)
+            except GitError as exc:
+                self._set_feedback(f"Switch failed: {exc}", error=True)
+                return
+            if result == "switched":
+                self._set_feedback(f"Switched to `{branch}`.")
+            elif result == "switched-with-stash":
+                self._set_feedback(f"Switched to `{branch}` and restored your changes.")
+            elif result == "switched-stash-conflict":
+                self._set_feedback(
+                    f"Switched to `{branch}`, but stash pop has conflicts. "
+                    "Resolve manually with `git stash list` / `git stash pop`.",
+                    error=True,
+                )
+            self.on_changed()
+
+        self._run_async(f"Switching to `{branch}`…", work)
 
     def _set_default_branch(self, branch: str) -> None:
         self.repo_config.default_branch = branch
@@ -477,26 +496,47 @@ class RepoPanel:
                 return
         open_diff_modal(self.page, change.path, diff)
 
-    def _generate_message(self) -> None:
-        try:
-            self._stage_selected(stage_all_if_empty=True)
-            diff = self.git.full_diff(self.repo.path, staged_only=True)
-            if not diff.strip():
-                diff = self.git.full_diff(self.repo.path, staged_only=False)
-            if not diff.strip():
-                self._set_feedback("Nothing to describe — no changes.", error=True)
-                self._ensure_expanded()
-                return
-            self._set_feedback("Generating commit message…")
-            self._ensure_expanded()
-            message = self.ai.commit_message(diff, self.repo_config)
-        except (GitError, AIBackendError) as exc:
-            self._set_feedback(f"AI generation failed: {exc}", error=True)
-            self._ensure_expanded()
+    def _run_async(self, label: str, fn: Callable[[], None]) -> None:
+        if self.is_busy:
+            self._set_feedback("Busy with another task — please wait.", error=True)
             return
-        self.commit_message.value = message
-        safe_update(self.commit_message)
-        self._set_feedback("Message generated. Edit if needed before committing.")
+        self.is_busy = True
+        self.progress.visible = True
+        self._set_feedback(label)
+        self._ensure_expanded()
+        safe_update(self.progress)
+
+        def runner() -> None:
+            try:
+                fn()
+            except Exception as exc:  # noqa: BLE001 — final safety net for thread
+                self._set_feedback(f"Unexpected error: {exc}", error=True)
+            finally:
+                self.is_busy = False
+                self.progress.visible = False
+                safe_update(self.progress)
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _generate_message(self) -> None:
+        def work() -> None:
+            try:
+                self._stage_selected(stage_all_if_empty=True)
+                diff = self.git.full_diff(self.repo.path, staged_only=True)
+                if not diff.strip():
+                    diff = self.git.full_diff(self.repo.path, staged_only=False)
+                if not diff.strip():
+                    self._set_feedback("Nothing to describe — no changes.", error=True)
+                    return
+                message = self.ai.commit_message(diff, self.repo_config)
+            except (GitError, AIBackendError) as exc:
+                self._set_feedback(f"AI generation failed: {exc}", error=True)
+                return
+            self.commit_message.value = message
+            safe_update(self.commit_message)
+            self._set_feedback("Message generated. Edit if needed before committing.")
+
+        self._run_async("✨ Generating commit message…", work)
 
     def _commit(self) -> None:
         message = (self.commit_message.value or "").strip()
@@ -504,78 +544,92 @@ class RepoPanel:
             self._set_feedback("Type or generate a commit message first.", error=True)
             self._ensure_expanded()
             return
-        try:
-            self._stage_selected(stage_all_if_empty=True)
-            self._run_preflight()
-            sha = self.git.commit(self.repo.path, message)
-        except GitError as exc:
-            self._set_feedback(f"Commit failed: {exc}", error=True)
-            return
-        except _PreflightBlockedError as exc:
-            self._set_feedback(str(exc), error=True)
-            return
-        self.commit_message.value = ""
-        self.selected_paths.clear()
-        self._set_feedback(f"Committed {sha[:7]} on {self.repo.current_branch}.")
-        safe_update(self.commit_message)
-        self.on_changed()
+
+        def work() -> None:
+            try:
+                self._stage_selected(stage_all_if_empty=True)
+                self._run_preflight()
+                sha = self.git.commit(self.repo.path, message)
+            except GitError as exc:
+                self._set_feedback(f"Commit failed: {exc}", error=True)
+                return
+            except _PreflightBlockedError as exc:
+                self._set_feedback(str(exc), error=True)
+                return
+            self.commit_message.value = ""
+            self.selected_paths.clear()
+            self._set_feedback(f"Committed {sha[:7]} on {self.repo.current_branch}.")
+            safe_update(self.commit_message)
+            self.on_changed()
+
+        self._run_async(f"Committing on {self.repo.current_branch}…", work)
 
     def _push(self) -> None:
-        try:
-            summary = self.git.push(self.repo.path)
-        except GitError as exc:
-            self._set_feedback(f"Push failed: {exc}", error=True)
-            self._ensure_expanded()
-            return
-        self._set_feedback(f"Pushed {self.repo.current_branch}: {summary}")
-        self.on_changed()
+        def work() -> None:
+            try:
+                summary = self.git.push(self.repo.path)
+            except GitError as exc:
+                self._set_feedback(f"Push failed: {exc}", error=True)
+                return
+            self._set_feedback(f"Pushed {self.repo.current_branch}: {summary}")
+            self.on_changed()
+
+        self._run_async(f"Pushing {self.repo.current_branch}…", work)
 
     def _auto_pilot(self) -> None:
         if not self.repo_config.auto_pilot:
             self._set_feedback("Auto-pilot is disabled for this repo.", error=True)
             return
-        try:
-            self._stage_selected(stage_all_if_empty=True)
-            diff = self.git.full_diff(self.repo.path, staged_only=True)
-            if not diff.strip():
-                self._set_feedback("Nothing to commit.")
+
+        def work() -> None:
+            try:
+                self._stage_selected(stage_all_if_empty=True)
+                diff = self.git.full_diff(self.repo.path, staged_only=True)
+                if not diff.strip():
+                    self._set_feedback("Nothing to commit.")
+                    return
+                self._run_preflight()
+                message = self.ai.commit_message(diff, self.repo_config)
+                self.git.commit(self.repo.path, message)
+                summary = self.git.push(self.repo.path)
+            except (GitError, AIBackendError, _PreflightBlockedError) as exc:
+                self._set_feedback(f"Auto-pilot stopped: {exc}", error=True)
                 return
-            self._run_preflight()
-            message = self.ai.commit_message(diff, self.repo_config)
-            self.git.commit(self.repo.path, message)
-            summary = self.git.push(self.repo.path)
-        except (GitError, AIBackendError, _PreflightBlockedError) as exc:
-            self._set_feedback(f"Auto-pilot stopped: {exc}", error=True)
-            return
-        self._set_feedback(f"Auto-pilot ok. Pushed: {summary}")
-        self.on_changed()
+            self._set_feedback(f"Auto-pilot ok. Pushed: {summary}")
+            self.on_changed()
+
+        self._run_async("🚀 Auto-pilot: stage → commit → push…", work)
 
     def _merge(self) -> None:
         source = self.merge_source.value
         if not source:
-            self._set_feedback("Pick a branch to merge from.", error=True)
+            self._set_feedback("Pick a source branch to merge.", error=True)
             self._ensure_expanded()
             return
-        try:
-            conflict = self.git.begin_merge(self.repo.path, source)
-        except GitError as exc:
-            self._set_feedback(f"Merge failed: {exc}", error=True)
-            self._ensure_expanded()
-            return
-        if conflict is None:
+        target = self.repo.current_branch
+
+        def work() -> None:
             try:
-                sha = self.git.commit(
-                    self.repo.path,
-                    f"Merge branch '{source}' into {self.repo.current_branch}",
-                )
+                conflict = self.git.begin_merge(self.repo.path, source)
             except GitError as exc:
-                self._set_feedback(f"Could not finalize merge: {exc}", error=True)
+                self._set_feedback(f"Merge failed: {exc}", error=True)
                 return
-            self._set_feedback(f"Merged {source} → {self.repo.current_branch} ({sha[:7]}).")
-            self.on_changed()
-            return
-        self._set_feedback(f"Merge has {len(conflict.files)} conflict(s). Opening AI conflict resolver…")
-        self.on_open_merge(self.repo)
+            if conflict is None:
+                try:
+                    sha = self.git.commit(
+                        self.repo.path,
+                        f"Merge branch '{source}' into {target}",
+                    )
+                except GitError as exc:
+                    self._set_feedback(f"Could not finalize merge: {exc}", error=True)
+                    return
+                self._set_feedback(f"Merged {source} → {target} ({sha[:7]}).")
+                self.on_changed()
+                return
+            self._set_feedback(f"Merge has {len(conflict.files)} conflict(s). Opening AI conflict resolver…")
+            self.on_open_merge(self.repo)
+
+        self._run_async(f"Merging {source} into {target}…", work)
 
     # ─────── helpers ───────
 
