@@ -176,7 +176,6 @@ class DashboardView:
                 spacing=10,
             ),
             padding=40,
-            alignment=ft.alignment.center,
         )
 
     def _empty_state(self) -> ft.Control:
