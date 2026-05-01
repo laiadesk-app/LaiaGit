@@ -99,6 +99,11 @@ class SettingsView:
             on_submit=lambda _: self._add_extra_path(),
         )
 
+        self._picker_target: str | None = None
+        self.folder_picker = ft.FilePicker(on_result=self._on_folder_picked)
+        if self.folder_picker not in self.page.overlay:
+            self.page.overlay.append(self.folder_picker)
+
     def build(self) -> ft.Control:
         self._update_detection()
         self._render_extra_paths()
@@ -110,7 +115,18 @@ class SettingsView:
                     content=ft.Column(
                         [
                             ft.Text("General", size=14, weight=ft.FontWeight.BOLD),
-                            self.root_field,
+                            ft.Row(
+                                [
+                                    self.root_field,
+                                    ft.IconButton(
+                                        icon=ft.Icons.FOLDER_OPEN,
+                                        tooltip="Browse for a folder",
+                                        on_click=lambda _: self._pick_folder("root"),
+                                    ),
+                                ],
+                                spacing=4,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                            ),
                             ft.Text(
                                 "Additional folders & specific repos",
                                 size=13,
@@ -128,6 +144,11 @@ class SettingsView:
                             ft.Row(
                                 [
                                     self.extra_path_input,
+                                    ft.IconButton(
+                                        icon=ft.Icons.FOLDER_OPEN,
+                                        tooltip="Browse for a folder",
+                                        on_click=lambda _: self._pick_folder("extra"),
+                                    ),
                                     ft.FilledTonalButton(
                                         "Add",
                                         icon=ft.Icons.ADD,
@@ -135,6 +156,7 @@ class SettingsView:
                                     ),
                                 ],
                                 spacing=8,
+                                vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             ),
                             ft.Divider(),
                             ft.Text("AI backends", size=14, weight=ft.FontWeight.BOLD),
@@ -216,6 +238,22 @@ class SettingsView:
             padding=ft.padding.symmetric(horizontal=12, vertical=8),
             bgcolor=ft.Colors.GREY_50,
         )
+
+    def _pick_folder(self, target: str) -> None:
+        self._picker_target = target
+        self.folder_picker.get_directory_path(dialog_title="Pick a folder")
+
+    def _on_folder_picked(self, e: ft.FilePickerResultEvent) -> None:
+        if not e.path:
+            return
+        if self._picker_target == "root":
+            self.root_field.value = e.path
+            safe_update(self.root_field)
+            self._set_feedback(f"Root folder set to `{e.path}`. Click Save to persist.")
+        elif self._picker_target == "extra":
+            self.extra_path_input.value = e.path
+            safe_update(self.extra_path_input)
+        self._picker_target = None
 
     def _render_extra_paths(self) -> None:
         if not self.config.extra_paths:
@@ -306,9 +344,15 @@ class SettingsView:
         self.config.preflight.block_secrets = bool(self.preflight_secrets.value)
         self.config.preflight.block_todos = bool(self.preflight_todos.value)
         self.config.preflight.block_console_logs = bool(self.preflight_console.value)
-        self.config_service.save(self.config)
+        try:
+            self.config_service.save(self.config)
+        except OSError as exc:
+            self.feedback.value = f"Could not save: {exc}"
+            self.feedback.color = ft.Colors.RED_400
+            safe_update(self.feedback)
+            return
         self.ai.reload(self.config)
-        self.feedback.value = "Saved."
-        self.feedback.color = ft.Colors.GREEN_500
-        safe_update(self.feedback)
         self.on_saved(self.config)
+        # Auto-navigate back to dashboard. The dashboard will show its own
+        # loading indicator while it re-scans with the new config.
+        self.on_back()
