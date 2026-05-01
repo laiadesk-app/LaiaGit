@@ -58,11 +58,12 @@ class RepoPanel:
             expand=True,
         )
         self.merge_source = ft.Dropdown(
-            label="Source branch",
-            hint_text="pick a branch",
+            hint_text="source branch",
             options=self._merge_options(),
-            width=170,
+            width=140,
             dense=True,
+            text_style=ft.TextStyle(size=11),
+            hint_style=ft.TextStyle(size=11, color=ft.Colors.GREY_500),
             tooltip=(
                 f"Branch to merge into `{self.repo.current_branch}` (your current branch is the destination)"
             ),
@@ -540,9 +541,39 @@ class RepoPanel:
 
     def _commit(self) -> None:
         message = (self.commit_message.value or "").strip()
+
         if not message:
-            self._set_feedback("Type or generate a commit message first.", error=True)
-            self._ensure_expanded()
+            # Smart commit: empty field → auto-generate via AI then commit.
+            def smart_work() -> None:
+                try:
+                    self._stage_selected(stage_all_if_empty=True)
+                    diff = self.git.full_diff(self.repo.path, staged_only=True)
+                    if not diff.strip():
+                        self._set_feedback("Nothing to commit.", error=True)
+                        return
+                    generated = self.ai.commit_message(diff, self.repo_config)
+                    self.commit_message.value = generated
+                    safe_update(self.commit_message)
+                    self._run_preflight()
+                    sha = self.git.commit(self.repo.path, generated)
+                except (GitError, AIBackendError) as exc:
+                    self._set_feedback(f"Commit failed: {exc}", error=True)
+                    return
+                except _PreflightBlockedError as exc:
+                    self._set_feedback(str(exc), error=True)
+                    return
+                self.commit_message.value = ""
+                self.selected_paths.clear()
+                self._set_feedback(
+                    f"Committed {sha[:7]} on {self.repo.current_branch} (AI-generated message)."
+                )
+                safe_update(self.commit_message)
+                self.on_changed()
+
+            self._run_async(
+                f"✨ Generating message + committing on {self.repo.current_branch}…",
+                smart_work,
+            )
             return
 
         def work() -> None:
