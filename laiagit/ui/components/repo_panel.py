@@ -64,7 +64,7 @@ class RepoPanel:
             dense=True,
             text_style=ft.TextStyle(size=11),
             hint_style=ft.TextStyle(size=11, color=ft.Colors.GREY_500),
-            on_change=lambda _: self._refresh_merge_button(),
+            on_select=lambda _: self._refresh_merge_button(),
             tooltip=(
                 f"Branch to merge into `{self.repo.current_branch}` "
                 f"(your current branch is the destination)"
