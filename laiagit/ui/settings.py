@@ -90,8 +90,18 @@ class SettingsView:
         self.detection_text = ft.Text("", size=12, color=ft.Colors.GREY_700)
         self.feedback = ft.Text("", size=12, color=ft.Colors.GREY_700)
 
+        self.extra_paths_list = ft.Column(spacing=4, tight=True)
+        self.extra_path_input = ft.TextField(
+            label="Add a folder to scan or a single repo path",
+            hint_text="/Users/me/work/special-project",
+            expand=True,
+            dense=True,
+            on_submit=lambda _: self._add_extra_path(),
+        )
+
     def build(self) -> ft.Control:
         self._update_detection()
+        self._render_extra_paths()
         return ft.Column(
             [
                 self._header(),
@@ -101,6 +111,31 @@ class SettingsView:
                         [
                             ft.Text("General", size=14, weight=ft.FontWeight.BOLD),
                             self.root_field,
+                            ft.Text(
+                                "Additional folders & specific repos",
+                                size=13,
+                                weight=ft.FontWeight.W_500,
+                                color=ft.Colors.GREY_800,
+                            ),
+                            ft.Text(
+                                "Add a folder to scan recursively, or the path of a single repo "
+                                "to include directly. The dashboard merges them with the main "
+                                "root folder above.",
+                                size=11,
+                                color=ft.Colors.GREY_600,
+                            ),
+                            self.extra_paths_list,
+                            ft.Row(
+                                [
+                                    self.extra_path_input,
+                                    ft.FilledTonalButton(
+                                        "Add",
+                                        icon=ft.Icons.ADD,
+                                        on_click=lambda _: self._add_extra_path(),
+                                    ),
+                                ],
+                                spacing=8,
+                            ),
                             ft.Divider(),
                             ft.Text("AI backends", size=14, weight=ft.FontWeight.BOLD),
                             self.detection_text,
@@ -181,6 +216,76 @@ class SettingsView:
             padding=ft.padding.symmetric(horizontal=12, vertical=8),
             bgcolor=ft.Colors.GREY_50,
         )
+
+    def _render_extra_paths(self) -> None:
+        if not self.config.extra_paths:
+            self.extra_paths_list.controls = [
+                ft.Text(
+                    "No additional paths configured.",
+                    size=11,
+                    color=ft.Colors.GREY_500,
+                    italic=True,
+                )
+            ]
+        else:
+            self.extra_paths_list.controls = [self._extra_path_row(p) for p in self.config.extra_paths]
+        safe_update(self.extra_paths_list)
+
+    def _extra_path_row(self, path: str) -> ft.Control:
+        from pathlib import Path as _Path
+
+        resolved = _Path(path).expanduser()
+        is_repo = (resolved / ".git").exists()
+        kind = "repo" if is_repo else ("folder" if resolved.is_dir() else "missing")
+        kind_color = {
+            "repo": ft.Colors.GREEN_700,
+            "folder": ft.Colors.BLUE_700,
+            "missing": ft.Colors.RED_500,
+        }[kind]
+        return ft.Row(
+            [
+                ft.Icon(ft.Icons.FOLDER if not is_repo else ft.Icons.SOURCE, size=16, color=kind_color),
+                ft.Text(path, size=12, expand=True, no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS),
+                ft.Container(
+                    content=ft.Text(kind, size=10, color=kind_color),
+                    padding=ft.padding.symmetric(horizontal=6, vertical=1),
+                    bgcolor=ft.Colors.with_opacity(0.10, kind_color),
+                    border_radius=6,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    icon_size=18,
+                    tooltip="Remove",
+                    on_click=lambda _, p=path: self._remove_extra_path(p),
+                ),
+            ],
+            spacing=8,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+    def _add_extra_path(self) -> None:
+        raw = (self.extra_path_input.value or "").strip()
+        if not raw:
+            return
+        if raw in self.config.extra_paths:
+            self._set_feedback(f"`{raw}` is already in the list.", error=True)
+            return
+        self.config.extra_paths.append(raw)
+        self.extra_path_input.value = ""
+        safe_update(self.extra_path_input)
+        self._render_extra_paths()
+        self._set_feedback(f"Added `{raw}`. Click Save to persist.")
+
+    def _remove_extra_path(self, path: str) -> None:
+        if path in self.config.extra_paths:
+            self.config.extra_paths.remove(path)
+            self._render_extra_paths()
+            self._set_feedback(f"Removed `{path}`. Click Save to persist.")
+
+    def _set_feedback(self, message: str, *, error: bool = False) -> None:
+        self.feedback.value = message
+        self.feedback.color = ft.Colors.RED_400 if error else ft.Colors.GREY_700
+        safe_update(self.feedback)
 
     def _update_detection(self) -> None:
         results = self.ai.detect_available()

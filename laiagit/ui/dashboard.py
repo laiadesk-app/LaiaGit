@@ -98,7 +98,10 @@ class DashboardView:
         self.status_text.value = "Scanning…"
         safe_update(self.status_text)
 
-        self.repos = self.scanner.scan(self.config.root_folder_path)
+        self.repos = self.scanner.scan_all(
+            self.config.root_folder_path,
+            self.config.extra_path_paths,
+        )
         for r in self.repos:
             self.git.hydrate(r)
 
