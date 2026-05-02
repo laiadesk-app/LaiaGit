@@ -137,3 +137,43 @@ def test_merge_conflict_detection(tmp_git_repo: Path) -> None:
     paths = [cf.path for cf in conflict.files]
     assert "shared.txt" in paths
     git.abort_merge(tmp_git_repo)
+
+
+def test_add_to_gitignore_creates_file_when_missing(tmp_git_repo: Path) -> None:
+    git = GitService()
+    written = git.add_to_gitignore(tmp_git_repo, ["build/", "secrets.env"])
+    assert written == ["build/", "secrets.env"]
+    content = (tmp_git_repo / ".gitignore").read_text(encoding="utf-8")
+    assert "build/" in content
+    assert "secrets.env" in content
+
+
+def test_add_to_gitignore_dedupes_existing(tmp_git_repo: Path) -> None:
+    (tmp_git_repo / ".gitignore").write_text("node_modules\nbuild/\n")
+    git = GitService()
+    written = git.add_to_gitignore(tmp_git_repo, ["build/", "secrets.env", "node_modules"])
+    assert written == ["secrets.env"]
+    lines = (tmp_git_repo / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert lines.count("build/") == 1
+    assert lines.count("node_modules") == 1
+    assert "secrets.env" in lines
+
+
+def test_add_to_gitignore_handles_missing_trailing_newline(tmp_git_repo: Path) -> None:
+    (tmp_git_repo / ".gitignore").write_text("foo")  # no trailing newline
+    git = GitService()
+    git.add_to_gitignore(tmp_git_repo, ["bar"])
+    content = (tmp_git_repo / ".gitignore").read_text(encoding="utf-8")
+    assert content.startswith("foo\nbar")
+
+
+def test_add_to_gitignore_empty_input_noop(tmp_git_repo: Path) -> None:
+    git = GitService()
+    assert git.add_to_gitignore(tmp_git_repo, []) == []
+    assert not (tmp_git_repo / ".gitignore").exists()
+
+
+def test_add_to_gitignore_skips_blank_strings(tmp_git_repo: Path) -> None:
+    git = GitService()
+    written = git.add_to_gitignore(tmp_git_repo, ["", "   ", "real.txt"])
+    assert written == ["real.txt"]

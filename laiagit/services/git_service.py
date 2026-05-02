@@ -281,6 +281,62 @@ class GitService:
         except GitCommandError as exc:
             raise GitError(str(exc)) from exc
 
+    def fetch(self, path: Path, remote: str = "origin") -> str:
+        """Fetch from `remote`. Returns a short human-readable summary."""
+        git_repo = self.open(path)
+        if not git_repo.remotes:
+            raise GitError("Repository has no configured remote")
+        try:
+            fetch_info = git_repo.remote(remote).fetch(prune=True)
+        except GitCommandError as exc:
+            raise GitError(str(exc)) from exc
+        updated = [
+            f"{fi.ref.name} {fi.commit.hexsha[:7]}"
+            for fi in fetch_info
+            if fi.flags & fi.FAST_FORWARD or fi.flags & fi.NEW_HEAD or fi.flags & fi.FORCED_UPDATE
+        ]
+        if not updated:
+            return "Up to date"
+        return "Updated: " + ", ".join(updated[:5]) + ("…" if len(updated) > 5 else "")
+
+    def add_to_gitignore(self, path: Path, paths: list[str]) -> list[str]:
+        """Append paths to `.gitignore`, deduped against existing lines.
+
+        Each input path is treated as a literal entry (not a glob). Returns
+        the list of patterns actually written (existing ones are skipped).
+        """
+        if not paths:
+            return []
+        gitignore = path / ".gitignore"
+        existing: set[str] = set()
+        if gitignore.exists():
+            with gitignore.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    stripped = line.strip()
+                    if stripped and not stripped.startswith("#"):
+                        existing.add(stripped)
+        new_entries = [p.strip() for p in paths if p and p.strip()]
+        new_entries = [p for p in new_entries if p not in existing]
+        if not new_entries:
+            return []
+        # Preserve trailing newline behaviour: ensure file ends with \n before
+        # appending so we don't accidentally concatenate with the last line.
+        prefix = ""
+        if gitignore.exists():
+            with gitignore.open("rb") as fh:
+                fh.seek(0, 2)  # end
+                size = fh.tell()
+                if size > 0:
+                    fh.seek(size - 1)
+                    last = fh.read(1)
+                    if last not in (b"\n", b"\r"):
+                        prefix = "\n"
+        with gitignore.open("a", encoding="utf-8") as fh:
+            fh.write(prefix)
+            for entry in new_entries:
+                fh.write(entry + "\n")
+        return new_entries
+
     def begin_merge(self, path: Path, source_branch: str) -> Conflict | None:
         """Run `git merge --no-commit --no-ff` for source_branch. Return Conflict if conflicts arise."""
         git_repo = self.open(path)

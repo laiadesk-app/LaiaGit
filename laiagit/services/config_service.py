@@ -49,6 +49,7 @@ class RepoConfig:
     auto_pilot: bool = False
     default_branch: str | None = None
     preflight: PreflightConfig = field(default_factory=PreflightConfig)
+    hidden_paths: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -111,6 +112,7 @@ class ConfigService:
             auto_pilot=raw.get("auto_pilot", False),
             default_branch=raw.get("default_branch"),
             preflight=PreflightConfig(**preflight_raw) if preflight_raw else PreflightConfig(),
+            hidden_paths=list(raw.get("hidden_paths", [])),
         )
 
     def save_repo_config(self, repo_path: Path, repo_config: RepoConfig) -> None:
@@ -126,6 +128,7 @@ class ConfigService:
                 "block_console_logs": repo_config.preflight.block_console_logs,
                 "max_file_size_mb": repo_config.preflight.max_file_size_mb,
             },
+            "hidden_paths": list(repo_config.hidden_paths),
         }
         with (repo_config_dir / "repo.yaml").open("w", encoding="utf-8") as fh:
             yaml.safe_dump(data, fh, sort_keys=False, default_flow_style=False)
