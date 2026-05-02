@@ -8,17 +8,14 @@ from laiagit.ui.components.file_diff import diff_view
 
 
 def open_diff_modal(page: ft.Page, file_path: str, diff_text: str) -> None:
-    """Open a modal dialog showing the diff for one file (Flet 0.84-compatible)."""
+    """Open a modal dialog showing the diff for one file (Flet 0.84)."""
 
     def close(_: ft.ControlEvent | None = None) -> None:
-        dialog.open = False
+        # Flet 0.84 canonical close: pop the top dialog from the page
+        # stack. Older patterns (toggling .open + manual overlay removal)
+        # leave a ghost paint on macOS.
         with contextlib.suppress(Exception):
-            page.update()
-        # Clean up: drop the dialog from page.overlay so opening many files
-        # in a row does not accumulate stale dialogs.
-        with contextlib.suppress(ValueError):
-            page.overlay.remove(dialog)
-        with contextlib.suppress(Exception):
+            page.pop_dialog()
             page.update()
 
     dialog = ft.AlertDialog(
@@ -39,6 +36,4 @@ def open_diff_modal(page: ft.Page, file_path: str, diff_text: str) -> None:
         actions_alignment=ft.MainAxisAlignment.END,
     )
 
-    page.overlay.append(dialog)
-    dialog.open = True
-    page.update()
+    page.show_dialog(dialog)
