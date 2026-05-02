@@ -81,7 +81,7 @@ Worth a look if you're building something similar:
 - [`laiagit/services/repo_scanner.py`](laiagit/services/repo_scanner.py) — recursive `.git` discovery with exclusion sets and progressive hydration so a 50-repo dashboard doesn't block on the first paint.
 - [`laiagit/ui/dashboard.py`](laiagit/ui/dashboard.py) — the orchestrator: phased UI (skeleton → hydrate → reorder), threading model, in-place reorder vs. full refresh.
 - [`laiagit/ui/components/repo_panel.py`](laiagit/ui/components/repo_panel.py) — single-row component with all per-repo actions; canonical example of how we keep complex UI state local and side-effects explicit.
-- [`tests/`](tests/) — 47 unit tests, real Git temp repos (no mocks), real config round-trips. The test patterns are reusable.
+- [`tests/`](tests/) — ~60 unit tests, real Git temp repos (no mocks), real config round-trips. The test patterns are reusable.
 
 The architecture is described in [`docs/laiagit_design.md`](docs/laiagit_design.md)
 and the version-by-version plan in [`docs/plans/2026-05-01-laiagit-roadmap.md`](docs/plans/2026-05-01-laiagit-roadmap.md).
@@ -99,19 +99,45 @@ and the version-by-version plan in [`docs/plans/2026-05-01-laiagit-roadmap.md`](
 
 ## Install
 
-### Pre-built binaries (recommended)
+There are three ways, depending on whether you're a curious user or a
+developer who wants to live on `main`.
 
-Grab the asset for your OS from the [latest release](https://github.com/laiadesk-app/LaiaGit/releases/latest):
+### Option 1 — One-liner installer (developers, recommended)
+
+If you have `git` and `python3` (3.11+), this is the fastest way and the
+one we recommend if you want **automatic updates by `git pull`**. LaiaGit
+will tell you when a new version is out and offer to update from source
+in one click.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/laiadesk-app/LaiaGit/main/scripts/install.sh | sh
+```
+
+That clones to `~/.laiagit-src`, sets up a virtualenv, installs
+LaiaGit in editable mode, and prints the launch command. Update later
+with `~/.laiagit-src/scripts/update.sh` or by clicking *"Update from
+source"* on the in-app banner.
+
+> Want it elsewhere? `LAIAGIT_DIR=~/code/laiagit curl ... | sh`.
+
+### Option 2 — Pre-built binary
+
+Grab the asset for your OS from the
+[latest release](https://github.com/laiadesk-app/LaiaGit/releases/latest):
 
 - **macOS** — `LaiaGit-macos.zip` → unzip → drag `LaiaGit.app` to *Applications*.
 - **Windows** — `LaiaGit-windows.zip` → unzip → run `LaiaGit.exe`.
 - **Linux** — `LaiaGit-linux.tar.gz` → untar → run the `LaiaGit` binary.
 
-> Binaries are **unsigned** for now (signing certs are expensive — open
-> a discussion if your org would sponsor signing). On macOS:
-> right-click → *Open* the first time. On Windows: *More info → Run anyway*.
+LaiaGit checks GitHub for newer releases on launch and shows a banner
+when one is available. **You still download the new binary manually** —
+true auto-update needs code signing, which we haven't paid for yet.
 
-### From source (developers / contributors)
+> Binaries are **unsigned** for now. On macOS: right-click → *Open* the
+> first time. On Windows: *More info → Run anyway*.
+> Sponsoring signing certs ($300-600/year)? Open a discussion.
+
+### Option 3 — Manual clone (contributors)
 
 ```bash
 git clone https://github.com/laiadesk-app/LaiaGit.git
@@ -123,6 +149,20 @@ python3 -m venv .venv
 
 First launch creates `~/.laiagit/config.yaml`. Default root folder is
 `~/dev` — change it from *Settings* or the folder picker.
+
+### Update notifications
+
+Every time you launch LaiaGit, it asks the GitHub Releases API
+(non-blocking, never raises) whether there's a newer version. If so, an
+amber banner appears with two buttons:
+
+- *Download binary* — opens the Releases page in your browser.
+- *Update from source* — shows the exact `git pull && pip install -e .`
+  command, ready to copy.
+
+Dismiss it for the current version with the **×** button; it stays
+hidden until a newer version exists. Toggle the whole feature off in
+*Settings → Check for updates on startup*.
 
 ---
 
@@ -163,17 +203,43 @@ If you're not sure where to start, **post in Discussions and say hi** — one of
 
 ---
 
-## Roadmap
+## What's new
 
-We're shipping in five short versions; full plan in
+### v0.1.1 — current
+
+- ✨ **Update notifications.** LaiaGit checks GitHub on launch and
+  surfaces a banner when a newer version is out. One-click open the
+  release page or copy the source-update command. Fully toggleable.
+- 🚀 **One-liner installer** (`curl ... | sh`) for developers who want
+  to track `main` directly.
+- 🔧 Build pipeline finalised: `v0.1.0-alpha` and forward ship native
+  binaries for macOS / Windows / Linux on every tag push.
+- 🐛 Windows release build no longer chokes on flet's Unicode spinner.
+- ⚡ Repo reordering is now in-place (no rescan, no git hydrate).
+
+### Roadmap
+
+Full plan in
 [`docs/plans/2026-05-01-laiagit-roadmap.md`](docs/plans/2026-05-01-laiagit-roadmap.md).
+Highlights:
 
-Highlights in flight:
+- **v0.2 — Search & batch.** Search/filter across repos, batch commit-all
+  and push-all, multi-repo `git pull --all-mine`. Adds the actions you'd
+  otherwise script in bash.
+- **v0.3 — Agent-aware mode.** First-class integration with AI agent
+  workflows: per-repo agent assignments, agent-driven branch tagging,
+  notification panel for "agent X opened a PR in repo Y". This is where
+  LaiaGit stops being a git client and starts being an agent control
+  room.
+- **v0.4 — Workspaces.** Multiple grouped dashboards (e.g.
+  *clients/*, *internal/*, *experiments/*) with per-workspace AI
+  defaults and pre-flight rules.
+- **v0.5 — i18n + signed binaries.** Spanish first, then community
+  translations. macOS notarisation + Windows code signing so first-run
+  warnings disappear.
 
-- **v0.2** — search/filter across repos, batch operations (commit-all, push-all).
-- **v0.3** — per-repo agent assignments (which AI backend per repo, with rate-limit awareness).
-- **v0.4** — workspace concept (multiple grouped dashboards, per-workspace AI defaults).
-- **v0.5** — i18n + signed binaries.
+We move fast and ship small. If you want to influence what lands when,
+**open a discussion** — we read all of them.
 
 ---
 

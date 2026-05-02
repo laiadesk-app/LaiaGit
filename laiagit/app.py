@@ -49,6 +49,7 @@ class LaiaGitApp:
         )
         self._render(self.dashboard.build())
         self.dashboard.refresh()
+        self.dashboard.check_for_update_async()
 
     def _show_merge(self, repo: Repo) -> None:
         view = MergeView(
