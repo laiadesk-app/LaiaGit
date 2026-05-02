@@ -360,18 +360,15 @@ class DashboardView:
 
     def _request_exclude(self, repo: Repo) -> None:
         """Open a confirmation dialog before hiding a repo."""
-        dialog: ft.AlertDialog | None = None
 
         def close(_: ft.ControlEvent | None = None) -> None:
-            # Flet 0.84: setting open=False AND removing from overlay AND
-            # calling page.update() in the same frame as a downstream UI
-            # mutation occasionally leaves the modal painted. Close in two
-            # steps with a single page.update() at the very end.
-            if dialog is None:
-                return
-            dialog.open = False
-            if dialog in self.page.overlay:
-                self.page.overlay.remove(dialog)
+            # Flet 0.84 canonical close: pop the top dialog from the page's
+            # internal dialog stack. The previous approach of toggling
+            # `dialog.open = False` plus removing from `page.overlay` was
+            # the pattern used by older Flet versions and leaves a ghost
+            # paint here — the dialog stays visible until the next user
+            # interaction repaints the frame.
+            self.page.pop_dialog()
             self.page.update()
 
         def confirm(_: ft.ControlEvent) -> None:
@@ -435,9 +432,7 @@ class DashboardView:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.overlay.append(dialog)
-        dialog.open = True
-        self.page.update()
+        self.page.show_dialog(dialog)
 
     def _exclude_repo(self, repo: Repo) -> None:
         """In-place hide: remove the panel without rescanning the filesystem."""

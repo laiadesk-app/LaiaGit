@@ -13,6 +13,44 @@
 
 ---
 
+## ✨ Why this is different
+
+There are dozens of git clients. There are dozens of AI coding tools.
+**LaiaGit is the only thing that does both, in one window, with the AI
+*you* choose.**
+
+### 🗂️ Built for many repos at once
+
+One window, every repo under your dev folder, **single-line panels with
+status, branch and inline actions**. Commit, push, merge, refresh **per
+repo or batch**, without losing context. Custom ordering, hide noisy
+projects, per-repo defaults — designed from day one for **30+
+repositories**, not a single project.
+
+### 🔌 Bring your own AI — Ollama, Claude, Anthropic, OpenAI
+
+The same prompt contract works against **any** of these backends:
+
+| Backend | Why pick it |
+|---|---|
+| **[Ollama](https://ollama.com)** (local) | Fully on-device, free, private — your diffs never leave your machine |
+| **[Claude Code CLI](https://docs.claude.com/en/docs/claude-code)** | If you're already using it elsewhere, reuse the same auth |
+| **Anthropic API** (`ANTHROPIC_API_KEY`) | Best quality for commit messages and conflict resolution |
+| **OpenAI API** (`OPENAI_API_KEY`) | Drop-in if your org standardised on it |
+
+Switch backend per-repo or globally from *Settings*. Add a new one in
+~150 lines of Python — see [`laiagit/services/ai_service.py`](laiagit/services/ai_service.py).
+
+### 🛡️ Pre-flight catches what AI agents leak
+
+When AI tools (Cursor, Claude Code, Copilot, agents) generate code, they
+sometimes hardcode tokens, leave `console.log("DEBUG", apiKey)` in,
+include 200 MB dumps, or miss `TODO` markers. **LaiaGit blocks the push
+before any of that lands on the remote.** AWS / Anthropic / OpenAI /
+GitHub secret patterns out of the box, fully extensible.
+
+---
+
 ## A contribution from LaiaDesk to the developer community
 
 LaiaGit is a **gift** from the team behind [LaiaDesk](https://laiadesk.com).

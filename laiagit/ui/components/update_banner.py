@@ -105,14 +105,11 @@ class UpdateBanner:
             "&& .venv/bin/pip install -q -e . "
             "&& .venv/bin/python -m laiagit"
         )
-        dialog: ft.AlertDialog | None = None
 
         def close(_: ft.ControlEvent | None = None) -> None:
-            if dialog is not None:
-                dialog.open = False
-                if dialog in self.page.overlay:
-                    self.page.overlay.remove(dialog)
-                self.page.update()
+            # Flet 0.84 canonical close — see dashboard._request_exclude
+            self.page.pop_dialog()
+            self.page.update()
 
         def copy(_: ft.ControlEvent) -> None:
             self.page.set_clipboard(cmd)
@@ -152,9 +149,7 @@ class UpdateBanner:
                 ft.TextButton("Close", on_click=close),
             ],
         )
-        self.page.overlay.append(dialog)
-        dialog.open = True
-        self.page.update()
+        self.page.show_dialog(dialog)
 
     def _dismiss(self) -> None:
         self.on_dismiss(self.info.latest)
