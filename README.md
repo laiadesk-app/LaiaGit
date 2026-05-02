@@ -27,9 +27,12 @@ repo or batch**, without losing context. Custom ordering, hide noisy
 projects, per-repo defaults — designed from day one for **30+
 repositories**, not a single project.
 
-### 🔌 Bring your own AI — Ollama, Claude, Anthropic, OpenAI
+### 🔌 Bring your own AI — already four backends shipped
 
-The same prompt contract works against **any** of these backends:
+**LaiaGit ships open from day one with four AI backends**, so you're
+never locked into one provider, one billing model, or one network
+boundary. Same prompt contract across all of them — switch any time,
+per-repo or globally.
 
 | Backend | Why pick it |
 |---|---|
@@ -40,6 +43,36 @@ The same prompt contract works against **any** of these backends:
 
 Switch backend per-repo or globally from *Settings*. Add a new one in
 ~150 lines of Python — see [`laiagit/services/ai_service.py`](laiagit/services/ai_service.py).
+
+> #### 🎁 Coming soon — **LaiaDesk model + auto activity logging**, free for platform users
+>
+> A fifth backend is on its way: **LaiaDesk's own model, included free**
+> with any [LaiaDesk platform](https://laiadesk.com) account — no API
+> keys, no separate billing, no extra setup. Sign in to your LaiaDesk
+> workspace from LaiaGit and the model is ready.
+>
+> **And here's the part nobody else is doing.** When the LaiaDesk
+> backend is connected, LaiaGit auto-syncs with the **Tasks** and
+> **Projects** modules of your workspace:
+>
+> - Significant commits, PRs, merge resolutions and pre-flight blocks
+>   are **logged automatically as activity entries** on the right
+>   project and the right task.
+> - No manual time-tracking. No stale Jira tickets. No "what did I do
+>   yesterday" mid-standup.
+> - Your engineering work shows up next to your team's tasks where
+>   leadership, PMs, QA and regulatory already look — without anyone
+>   asking you to fill in another form.
+>
+> If you're already on LaiaDesk, this turns LaiaGit from "useful
+> standalone tool" into **the missing link between your code and your
+> operational backbone** — for free. If you're not on LaiaDesk yet, the
+> open-source app stays fully usable forever; this is just the extra
+> superpower you unlock if/when you join the platform.
+>
+> *Targeted for v0.3. Want early access? [Open a discussion](https://github.com/laiadesk-app/LaiaGit/discussions)
+> or write `info@laiadesk.com` — we're picking the first cohort of
+> integration testers now.*
 
 ### 🛡️ Pre-flight catches what AI agents leak
 
@@ -264,11 +297,15 @@ Highlights:
 - **v0.2 — Search & batch.** Search/filter across repos, batch commit-all
   and push-all, multi-repo `git pull --all-mine`. Adds the actions you'd
   otherwise script in bash.
-- **v0.3 — Agent-aware mode.** First-class integration with AI agent
-  workflows: per-repo agent assignments, agent-driven branch tagging,
-  notification panel for "agent X opened a PR in repo Y". This is where
-  LaiaGit stops being a git client and starts being an agent control
-  room.
+- **v0.3 — Agent-aware mode + LaiaDesk integration.** First-class
+  integration with AI agent workflows: per-repo agent assignments,
+  agent-driven branch tagging, notification panel for "agent X opened a
+  PR in repo Y". **Plus the LaiaDesk model as a built-in free backend
+  for platform users**, with auto-sync to the LaiaDesk Tasks and
+  Projects modules so your engineering activity logs itself onto the
+  right tickets. This is where LaiaGit stops being a git client and
+  starts being an agent control room — and, for LaiaDesk users, the
+  bridge between code and operations.
 - **v0.4 — Workspaces.** Multiple grouped dashboards (e.g.
   *clients/*, *internal/*, *experiments/*) with per-workspace AI
   defaults and pre-flight rules.
@@ -290,10 +327,20 @@ across many repositories, with many agents, and with many strict
 compliance constraints. The internal tooling we built to keep that
 working is **part of what makes the product possible**.
 
-LaiaGit is one slice of that tooling, given back. We hope it helps
-you, and if it does, we'd love to hear about it — open a discussion,
-star the repo, or just drop us a note at
-[`info@laiadesk.com`](mailto:info@laiadesk.com).
+LaiaGit is one slice of that tooling, given back. **Use it forever, for
+free, with the AI provider of your choice — that's the deal**, no
+strings, no telemetry, no upgrade nags.
+
+If you happen to *also* be a LaiaDesk customer, v0.3 will give you a
+sticky bonus: our included model and auto-logging into your Tasks and
+Projects modules, so your engineering activity ends up where the rest
+of your team already works — without any manual time entry. That's our
+way of saying *thank you* to the people who pay for the platform that
+funds this work.
+
+Want to try the platform? [laiadesk.com](https://laiadesk.com). Want to
+star the repo, file an issue, or just say hi? Open a discussion or drop
+us a note at [`info@laiadesk.com`](mailto:info@laiadesk.com).
 
 ---
 
