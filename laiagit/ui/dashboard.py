@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 from collections.abc import Callable
@@ -9,8 +10,10 @@ import flet as ft
 from laiagit.models import Repo
 from laiagit.services import AIService, ConfigService, GitService, RepoScanner
 from laiagit.services.config_service import LaiaGitConfig
+from laiagit.services.update_checker import check_for_update
 from laiagit.ui._utils import safe_update
 from laiagit.ui.components.repo_panel import RepoPanel
+from laiagit.ui.components.update_banner import UpdateBanner
 
 
 class DashboardView:
@@ -35,6 +38,7 @@ class DashboardView:
         self.on_open_merge = on_open_merge
 
         self.panels_column = ft.Column(spacing=0, tight=True)
+        self.update_banner_slot = ft.Container(visible=False)
         self.status_text = ft.Text("", size=12, color=ft.Colors.GREY_700)
         self.scan_progress = ft.ProgressBar(
             visible=False,
@@ -48,6 +52,7 @@ class DashboardView:
         return ft.Column(
             [
                 self._header(),
+                self.update_banner_slot,
                 self.scan_progress,
                 ft.Divider(height=1),
                 ft.Container(
@@ -134,6 +139,33 @@ class DashboardView:
             padding=ft.padding.symmetric(horizontal=16, vertical=10),
             bgcolor=ft.Colors.GREY_50,
         )
+
+    def check_for_update_async(self) -> None:
+        """Kick off a non-blocking GitHub Releases check on startup."""
+        if not self.config.check_for_updates:
+            return
+        threading.Thread(target=self._update_check_worker, daemon=True).start()
+
+    def _update_check_worker(self) -> None:
+        info = check_for_update()
+        if info is None:
+            return
+        if info.latest == self.config.last_dismissed_update:
+            return  # user already dismissed this exact version
+        banner = UpdateBanner(
+            page=self.page,
+            info=info,
+            on_dismiss=self._dismiss_update,
+        )
+        self.update_banner_slot.content = banner.build()
+        self.update_banner_slot.visible = True
+        safe_update(self.update_banner_slot)
+
+    def _dismiss_update(self, version: str) -> None:
+        # Persist failure is non-fatal — banner stays hidden this session anyway.
+        self.config.last_dismissed_update = version
+        with contextlib.suppress(OSError):
+            self.config_service.save(self.config)
 
     def refresh(self) -> None:
         # Show loading immediately on the UI thread so the user sees

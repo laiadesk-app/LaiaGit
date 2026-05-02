@@ -62,6 +62,8 @@ class LaiaGitConfig:
     shortcuts_enabled: bool = True
     auto_pilot_repos: list[str] = field(default_factory=list)
     preflight: PreflightConfig = field(default_factory=PreflightConfig)
+    check_for_updates: bool = True
+    last_dismissed_update: str = ""  # version the user clicked "Later" on
 
     @property
     def root_folder_path(self) -> Path:
@@ -146,6 +148,8 @@ class ConfigService:
             shortcuts_enabled=raw.get("shortcuts_enabled", True),
             auto_pilot_repos=raw.get("auto_pilot_repos", []),
             preflight=PreflightConfig(**preflight_raw) if preflight_raw else PreflightConfig(),
+            check_for_updates=raw.get("check_for_updates", True),
+            last_dismissed_update=raw.get("last_dismissed_update", ""),
         )
 
     def _to_dict(self, config: LaiaGitConfig) -> dict[str, Any]:
@@ -170,6 +174,8 @@ class ConfigService:
             },
             "shortcuts_enabled": config.shortcuts_enabled,
             "auto_pilot_repos": config.auto_pilot_repos,
+            "check_for_updates": config.check_for_updates,
+            "last_dismissed_update": config.last_dismissed_update,
             "preflight": {
                 "block_secrets": config.preflight.block_secrets,
                 "block_todos": config.preflight.block_todos,
