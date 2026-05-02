@@ -38,6 +38,7 @@ class RepoPanel:
         on_open_merge: Callable[[Repo], None],
         on_exclude: Callable[[Repo], None] | None = None,
         on_reorder: Callable[[Repo, str], None] | None = None,
+        on_refresh_one: Callable[[Repo], None] | None = None,
     ):
         self.page = page
         self.repo = repo
@@ -48,6 +49,7 @@ class RepoPanel:
         self.on_open_merge = on_open_merge
         self.on_exclude = on_exclude
         self.on_reorder = on_reorder
+        self.on_refresh_one = on_refresh_one
         self.repo_config = config_service.load_repo_config(repo.path)
         self.selected_paths: set[str] = set()
         self.expanded: bool = False
@@ -264,6 +266,16 @@ class RepoPanel:
                             on_click=lambda _: self.on_reorder(self.repo, "bottom"),
                         ),
                     ],
+                )
+            )
+
+        if self.on_refresh_one is not None:
+            right.append(
+                ft.IconButton(
+                    icon=ft.Icons.REFRESH,
+                    icon_size=16,
+                    tooltip="Refresh just this repo (no full rescan)",
+                    on_click=lambda _: self.on_refresh_one(self.repo),
                 )
             )
 
