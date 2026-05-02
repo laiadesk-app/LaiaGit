@@ -132,6 +132,8 @@ You stay in control. The AI proposes; you confirm.
 | **AI commit messages** | Click ✨ to fill the field, or click *Commit* on an empty field for one-step generate-and-commit. Conventional Commits format. |
 | **AI merge conflict resolution** | Per-file 3-panel review (theirs / ours / proposed). Regenerate or edit before accepting. |
 | **Pre-flight checks** | Block pushes that contain AWS / Anthropic / OpenAI / GitHub secrets, oversized files, stray `console.log`s, or `TODO` markers. |
+| **Per-repo Fetch + single-repo Refresh** | One click to `git fetch origin` (so you see if you're behind) or to re-hydrate the local state of a single repo — no full rescan, no flicker on the other 29 panels. |
+| **Bulk file actions (no AI required)** | Multi-select files in the changes list and either *Add to .gitignore* (writes a literal entry per path, deduped) or *Hide from view* (per-repo config — your files on disk are NEVER touched, just removed from this dashboard). |
 | **Custom ordering** | Reorder repos with a click; persisted across sessions. Move-to-top, move-up, move-down, move-to-bottom. |
 | **Hide repos** | Exclude noisy or archived projects from the dashboard without deleting them on disk. |
 | **Per-repo defaults** | Default branch, AI backend, auto-pilot opt-in — configured once per repo. |
@@ -276,7 +278,24 @@ If you're not sure where to start, **post in Discussions and say hi** — one of
 
 ## What's new
 
-### v0.1.1 — current
+### Latest on `main` (unreleased — pull from source to try)
+
+- 📥 **Per-repo Fetch button.** New cloud-download icon on every repo
+  row runs `git fetch origin` and re-hydrates the panel so the
+  ahead/behind counters reflect remote state. No merge, no surprises.
+- ✂️ **Bulk file actions without AI.** Tick the files you want and the
+  selection toolbar offers *Add to .gitignore* (writes a literal
+  pattern per file, deduped against the existing file) or *Hide from
+  view* (per-repo config; files on disk are **never** touched, only
+  removed from this dashboard's body). Both are idempotent and
+  scriptable.
+- 🪟 **Modal dialogs actually close on Flet 0.84.** Migrated all three
+  dialog sites (hide-repo confirm, file diff, update-from-source) to
+  Flet 0.84's canonical `page.show_dialog` / `pop_dialog` API.
+- ⚡ **In-place hide + per-repo refresh** (no full rescan; just the row
+  in question redraws).
+
+### v0.1.1 — last published release
 
 - ✨ **Update notifications.** LaiaGit checks GitHub on launch and
   surfaces a banner when a newer version is out. One-click open the
@@ -294,9 +313,11 @@ Full plan in
 [`docs/plans/2026-05-01-laiagit-roadmap.md`](docs/plans/2026-05-01-laiagit-roadmap.md).
 Highlights:
 
-- **v0.2 — Search & batch.** Search/filter across repos, batch commit-all
-  and push-all, multi-repo `git pull --all-mine`. Adds the actions you'd
-  otherwise script in bash.
+- **v0.2 — Search & batch.** Search/filter across repos, batch
+  commit-all / push-all / fetch-all, multi-repo `git pull --all-mine`.
+  Promotes today's *Add to .gitignore* and *Hide from view* file-level
+  actions to **cross-repo bulk** versions ("apply to all my repos").
+  Adds the actions you'd otherwise script in bash.
 - **v0.3 — Agent-aware mode + LaiaDesk integration.** First-class
   integration with AI agent workflows: per-repo agent assignments,
   agent-driven branch tagging, notification panel for "agent X opened a

@@ -269,6 +269,15 @@ class RepoPanel:
                 )
             )
 
+        right.append(
+            ft.IconButton(
+                icon=ft.Icons.CLOUD_DOWNLOAD,
+                icon_size=16,
+                tooltip="Fetch from origin (no merge, just update remote refs)",
+                on_click=lambda _: self._fetch(),
+            )
+        )
+
         if self.on_refresh_one is not None:
             right.append(
                 ft.IconButton(
@@ -315,10 +324,16 @@ class RepoPanel:
             return
 
         self.body_container.visible = self.expanded
-        self.body_container.content = ft.Column(
+
+        selection_toolbar = self._selection_toolbar()
+        body_rows: list[ft.Control] = [
+            ft.Divider(height=1, color=ft.Colors.GREY_200),
+            ft.Row([self.select_all, self.changes_label], spacing=4),
+        ]
+        if selection_toolbar is not None:
+            body_rows.append(selection_toolbar)
+        body_rows.extend(
             [
-                ft.Divider(height=1, color=ft.Colors.GREY_200),
-                ft.Row([self.select_all, self.changes_label], spacing=4),
                 ft.Container(
                     content=self.files_column,
                     padding=ft.padding.only(left=24),
@@ -328,9 +343,60 @@ class RepoPanel:
                     padding=ft.padding.only(top=4),
                 ),
                 self.feedback,
-            ],
-            spacing=4,
-            tight=True,
+            ]
+        )
+        self.body_container.content = ft.Column(body_rows, spacing=4, tight=True)
+
+    def _selection_toolbar(self) -> ft.Control | None:
+        """Tiny toolbar that appears when >=1 file is selected.
+
+        Offers the two non-AI bulk actions: add to `.gitignore` (writes a
+        literal pattern per file) and hide from this LaiaGit view (per-repo
+        config — files on disk are never touched).
+        """
+        if not self.selected_paths:
+            return None
+        n = len(self.selected_paths)
+        return ft.Container(
+            content=ft.Row(
+                [
+                    ft.Text(
+                        f"{n} selected →",
+                        size=11,
+                        color=ft.Colors.GREY_700,
+                        italic=True,
+                    ),
+                    ft.OutlinedButton(
+                        content=f"Add to .gitignore ({n})",
+                        icon=ft.Icons.RULE,
+                        height=28,
+                        on_click=lambda _: self._add_selected_to_gitignore(),
+                        style=ft.ButtonStyle(
+                            text_style=ft.TextStyle(size=11),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                        ),
+                        tooltip="Append the selected paths to this repo's .gitignore",
+                    ),
+                    ft.OutlinedButton(
+                        content=f"Hide from view ({n})",
+                        icon=ft.Icons.VISIBILITY_OFF_OUTLINED,
+                        height=28,
+                        on_click=lambda _: self._hide_selected_from_view(),
+                        style=ft.ButtonStyle(
+                            text_style=ft.TextStyle(size=11),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=2),
+                        ),
+                        tooltip=(
+                            "Hide these files from this dashboard only. "
+                            "Files on disk and git tracking are NOT changed. "
+                            "Restore from per-repo config."
+                        ),
+                    ),
+                ],
+                spacing=8,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            padding=ft.padding.only(left=24, top=2, bottom=2),
         )
 
     def _toggle_expanded(self) -> None:
@@ -460,8 +526,13 @@ class RepoPanel:
     # ─────── data ───────
 
     def _populate_files(self) -> None:
+        hidden = set(self.repo_config.hidden_paths)
+        visible_changes = [c for c in self.repo.changes if c.path not in hidden]
+        # Drop any selections that are no longer visible (e.g. just hidden).
+        self.selected_paths &= {c.path for c in visible_changes}
+
         items: list[ft.Control] = []
-        for change in self.repo.changes:
+        for change in visible_changes:
             checkbox = ft.Checkbox(
                 value=change.path in self.selected_paths,
                 on_change=lambda e, c=change: self._toggle_select(c, e.control.value),
@@ -495,18 +566,32 @@ class RepoPanel:
             )
 
         if not items:
-            items.append(ft.Text("No pending changes.", color=ft.Colors.GREY_500, italic=True, size=12))
+            hidden_n = len(hidden)
+            if hidden_n > 0 and not visible_changes and self.repo.changes:
+                items.append(
+                    ft.Text(
+                        f"All {hidden_n} pending change(s) are hidden by your repo config.",
+                        color=ft.Colors.GREY_500,
+                        italic=True,
+                        size=12,
+                    )
+                )
+            else:
+                items.append(ft.Text("No pending changes.", color=ft.Colors.GREY_500, italic=True, size=12))
 
         self.files_column.controls = items
+        self._visible_count = len(visible_changes)
         self.changes_label.value = self._changes_summary()
-        self.select_all.value = bool(self.repo.changes) and len(self.selected_paths) == len(self.repo.changes)
+        self.select_all.value = bool(visible_changes) and len(self.selected_paths) == len(visible_changes)
 
     def _changes_summary(self) -> str:
-        n = len(self.repo.changes)
-        if n == 0:
+        visible = getattr(self, "_visible_count", len(self.repo.changes))
+        hidden = len(self.repo_config.hidden_paths)
+        if visible == 0 and hidden == 0:
             return "No pending changes"
         sel = len(self.selected_paths)
-        return f"{n} pending change{'s' if n != 1 else ''} — {sel} selected"
+        suffix = f" ({hidden} hidden by config)" if hidden else ""
+        return f"{visible} pending change{'s' if visible != 1 else ''} — {sel} selected{suffix}"
 
     def _status_bg(self, change: FileChange) -> str:
         return {
@@ -585,21 +670,33 @@ class RepoPanel:
     # ─────── interactions ───────
 
     def _toggle_select(self, change: FileChange, value: bool) -> None:
+        was_empty = not self.selected_paths
         if value:
             self.selected_paths.add(change.path)
         else:
             self.selected_paths.discard(change.path)
         self.changes_label.value = self._changes_summary()
         self.select_all.value = bool(self.repo.changes) and len(self.selected_paths) == len(self.repo.changes)
-        safe_update(self.changes_label, self.select_all)
+        # When the selection count crosses the 0 ↔ 1 boundary, the bulk
+        # toolbar appears/disappears — that lives in body markup, so we
+        # re-render the body in those cases (otherwise just patch labels).
+        is_empty = not self.selected_paths
+        if was_empty != is_empty:
+            self._render_body()
+            safe_update(self.body_container)
+        else:
+            safe_update(self.changes_label, self.select_all)
 
     def _toggle_all(self, value: bool) -> None:
+        hidden = set(self.repo_config.hidden_paths)
         if value:
-            self.selected_paths = {c.path for c in self.repo.changes}
+            self.selected_paths = {c.path for c in self.repo.changes if c.path not in hidden}
         else:
             self.selected_paths = set()
         self._populate_files()
-        safe_update(self.files_column, self.changes_label, self.select_all)
+        # Same body re-render reasoning as _toggle_select.
+        self._render_body()
+        safe_update(self.body_container)
 
     def _open_file_diff(self, change: FileChange) -> None:
         try:
@@ -727,6 +824,73 @@ class RepoPanel:
             self.on_changed()
 
         self._run_async(f"Pushing {self.repo.current_branch}…", work)
+
+    def _fetch(self) -> None:
+        def work() -> None:
+            try:
+                summary = self.git.fetch(self.repo.path)
+            except GitError as exc:
+                self._set_feedback(f"Fetch failed: {exc}", error=True)
+                return
+            self._set_feedback(summary)
+            # Re-hydrate so ahead/behind counters reflect the fetched state.
+            try:
+                self.git.hydrate(self.repo)
+            except GitError:
+                return
+            self.on_changed()
+
+        self._run_async("Fetching from origin…", work)
+
+    def _add_selected_to_gitignore(self) -> None:
+        targets = sorted(self.selected_paths)
+        if not targets:
+            self._set_feedback("Select at least one file first.", error=True)
+            return
+
+        def work() -> None:
+            try:
+                added = self.git.add_to_gitignore(self.repo.path, targets)
+            except OSError as exc:
+                self._set_feedback(f"Could not write .gitignore: {exc}", error=True)
+                return
+            if not added:
+                self._set_feedback("All selected paths were already in .gitignore.")
+                return
+            self._set_feedback(
+                f"Added {len(added)} entr{'ies' if len(added) != 1 else 'y'} to .gitignore "
+                f"(staged with the file). Review and commit when ready."
+            )
+            # .gitignore itself becomes a tracked change; refresh the panel.
+            self.selected_paths.clear()
+            self.on_changed()
+
+        self._run_async("Updating .gitignore…", work)
+
+    def _hide_selected_from_view(self) -> None:
+        targets = sorted(self.selected_paths)
+        if not targets:
+            self._set_feedback("Select at least one file first.", error=True)
+            return
+        existing = set(self.repo_config.hidden_paths)
+        new = [p for p in targets if p not in existing]
+        if not new:
+            self._set_feedback("All selected paths are already hidden.")
+            return
+        self.repo_config.hidden_paths = sorted(existing.union(new))
+        try:
+            self.config_service.save_repo_config(self.repo.path, self.repo_config)
+        except OSError as exc:
+            self._set_feedback(f"Could not save: {exc}", error=True)
+            return
+        self.selected_paths.clear()
+        self._set_feedback(
+            f"Hidden {len(new)} file{'s' if len(new) != 1 else ''} from this dashboard view "
+            f"(your files on disk are NOT touched). Manage from Settings → repo config."
+        )
+        self._populate_files()
+        self._render_body()
+        safe_update(self.body_container)
 
     def _auto_pilot(self) -> None:
         if not self.repo_config.auto_pilot:
