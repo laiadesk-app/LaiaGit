@@ -39,6 +39,7 @@ class DashboardView:
 
         self.panels_column = ft.Column(spacing=0, tight=True)
         self.update_banner_slot = ft.Container(visible=False)
+        self.header_container = ft.Container()
         self.status_text = ft.Text("", size=12, color=ft.Colors.GREY_700)
         self.scan_progress = ft.ProgressBar(
             visible=False,
@@ -49,9 +50,10 @@ class DashboardView:
         self.repos: list[Repo] = []
 
     def build(self) -> ft.Control:
+        self.header_container.content = self._header()
         return ft.Column(
             [
-                self._header(),
+                self.header_container,
                 self.update_banner_slot,
                 self.scan_progress,
                 ft.Divider(height=1),
@@ -68,6 +70,11 @@ class DashboardView:
             expand=True,
             spacing=0,
         )
+
+    def _refresh_header(self) -> None:
+        """Rebuild the header (e.g. so the 'X hidden' chip count updates)."""
+        self.header_container.content = self._header()
+        safe_update(self.header_container)
 
     def _header(self) -> ft.Control:
         right_items: list[ft.Control] = [self.status_text]
@@ -222,6 +229,7 @@ class DashboardView:
                     on_open_merge=self.on_open_merge,
                     on_exclude=self._request_exclude,
                     on_reorder=self._reorder_repo,
+                    on_refresh_one=self._refresh_single_repo,
                 ).build()
                 self.status_text.value = f"{len(repos)} repos · loading details ({i + 1}/{len(repos)})…"
                 safe_update(self.panels_column, self.status_text)
@@ -354,12 +362,17 @@ class DashboardView:
         """Open a confirmation dialog before hiding a repo."""
         dialog: ft.AlertDialog | None = None
 
-        def close() -> None:
-            if dialog is not None:
-                dialog.open = False
-                if dialog in self.page.overlay:
-                    self.page.overlay.remove(dialog)
-                self.page.update()
+        def close(_: ft.ControlEvent | None = None) -> None:
+            # Flet 0.84: setting open=False AND removing from overlay AND
+            # calling page.update() in the same frame as a downstream UI
+            # mutation occasionally leaves the modal painted. Close in two
+            # steps with a single page.update() at the very end.
+            if dialog is None:
+                return
+            dialog.open = False
+            if dialog in self.page.overlay:
+                self.page.overlay.remove(dialog)
+            self.page.update()
 
         def confirm(_: ft.ControlEvent) -> None:
             close()
@@ -427,6 +440,7 @@ class DashboardView:
         self.page.update()
 
     def _exclude_repo(self, repo: Repo) -> None:
+        """In-place hide: remove the panel without rescanning the filesystem."""
         path_str = str(repo.path)
         if path_str in self.config.excluded_repos:
             return
@@ -436,8 +450,72 @@ class DashboardView:
         except OSError as exc:
             self.status_text.value = f"Could not save exclusion: {exc}"
             safe_update(self.status_text)
+            self.config.excluded_repos.remove(path_str)
             return
-        self.refresh()
+
+        # Find the repo in our in-memory list and drop both the model and the
+        # panel at the same index. Falls back to a full refresh only if the
+        # two lists got out of sync (e.g. user clicked during a rescan).
+        panels = list(self.panels_column.controls)
+        if len(panels) != len(self.repos):
+            self.refresh()
+            return
+        idx = next((i for i, r in enumerate(self.repos) if str(r.path) == path_str), None)
+        if idx is None:
+            self.refresh()
+            return
+        self.repos.pop(idx)
+        panels.pop(idx)
+        self.panels_column.controls = panels
+
+        actionable = sum(1 for r in self.repos if r.status.value in ("pending", "unpushed", "conflict"))
+        self.status_text.value = f"{len(self.repos)} repos · {actionable} need attention"
+        safe_update(self.panels_column, self.status_text)
+        self._refresh_header()  # update the "X hidden" chip count
+
+    def _refresh_single_repo(self, repo: Repo) -> None:
+        """Re-hydrate one repo's git state and rebuild only its panel.
+
+        Other panels are not touched — no flicker, no rescan of the filesystem.
+        """
+        if not self.repos:
+            return
+        if len(self.panels_column.controls) != len(self.repos):
+            return  # mid-scan; ignore the click
+        idx = next(
+            (i for i, r in enumerate(self.repos) if str(r.path) == str(repo.path)),
+            None,
+        )
+        if idx is None:
+            return
+        threading.Thread(target=self._refresh_single_worker, args=(idx, repo), daemon=True).start()
+
+    def _refresh_single_worker(self, idx: int, repo: Repo) -> None:
+        try:
+            self.git.hydrate(repo)
+        except Exception:  # noqa: BLE001 — bad repo state shouldn't kill UI
+            return
+        # Re-locate the index in case the user reordered or hid something
+        # while we were hydrating.
+        try:
+            current_idx = next(i for i, r in enumerate(self.repos) if str(r.path) == str(repo.path))
+        except StopIteration:
+            return
+        if current_idx >= len(self.panels_column.controls):
+            return
+        self.panels_column.controls[current_idx] = RepoPanel(
+            page=self.page,
+            repo=repo,
+            git=self.git,
+            ai=self.ai,
+            config_service=self.config_service,
+            on_changed=self.refresh,
+            on_open_merge=self.on_open_merge,
+            on_exclude=self._request_exclude,
+            on_reorder=self._reorder_repo,
+            on_refresh_one=self._refresh_single_repo,
+        ).build()
+        safe_update(self.panels_column)
 
     def _loading_placeholder(self) -> ft.Control:
         return ft.Container(
